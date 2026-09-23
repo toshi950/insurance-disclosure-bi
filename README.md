@@ -2,9 +2,9 @@
 
 ## 課題 (Problem)
 
-🇯🇵 日本の保険業界には、上場企業の有価証券報告書のようなEDINET/XBRL的な統一データ形式が存在しない。生命保険協会・日本損害保険協会・日本少額短期保険協会の会員各社は、保険業法第111条に基づき毎年「ディスクロージャー資料」を公開しているが、各社が独自のPDFレイアウト・用語で作成しており、会社間でソルベンシーマージン比率や責任準備金等の主要指標を横並びで比較すること自体に手作業のコストがかかる。一部の会社（特定子会社基準を満たす個社）は例外的にEDINETへも単体ベースの有価証券報告書を提出しているが、これも会社によって提出有無が分かれ、業界全体を覆う構造化データにはなっていない。
+🇯🇵 日本の保険業界には、上場企業の有価証券報告書のようなEDINET/XBRL的な統一データ形式が存在しない。生命保険協会・日本損害保険協会・日本少額短期保険協会の会員各社は、保険業法第111条に基づき毎年「ディスクロージャー資料」を公開しているが、各社が独自のPDFレイアウト・用語で作成しており、会社間でソルベンシーマージン比率や責任準備金等の主要指標を横並びで比較すること自体に手作業のコストがかかる。一部の会社（自社が上場している、または公募社債等の継続開示義務を負う個社）は例外的にEDINETへも単体ベースの有価証券報告書を提出しているが、これも会社によって提出有無が分かれ、業界全体を覆う構造化データにはなっていない。
 
-🇬🇧 Japan's insurance industry has no EDINET/XBRL-style standardized disclosure format comparable to what listed companies provide. Member companies of the Life Insurance Association of Japan, the General Insurance Association of Japan, and the Japan Small Amount and Short Term Insurance Association each publish their own annual "disclosure documents" (mandated under Insurance Business Act Article 111), but every company uses its own PDF layout and terminology, making it costly to compare key metrics (solvency margin ratio, policy reserves, etc.) across companies. A subset of companies that meet the "specified subsidiary" threshold also individually file EDINET securities reports on a non-consolidated basis, but this coverage is inconsistent across the industry and does not amount to industry-wide structured data.
+🇬🇧 Japan's insurance industry has no EDINET/XBRL-style standardized disclosure format comparable to what listed companies provide. Member companies of the Life Insurance Association of Japan, the General Insurance Association of Japan, and the Japan Small Amount and Short Term Insurance Association each publish their own annual "disclosure documents" (mandated under Insurance Business Act Article 111), but every company uses its own PDF layout and terminology, making it costly to compare key metrics (solvency margin ratio, policy reserves, etc.) across companies. A subset of companies — those that are themselves listed, or that carry continuous-disclosure obligations from publicly offered bonds and similar instruments — also individually file EDINET securities reports on a non-consolidated basis, but this coverage is inconsistent across the industry and does not amount to industry-wide structured data.
 
 ## アプローチ (Approach)
 
@@ -28,10 +28,10 @@
 
 | 業界 | データソース | 対象 |
 |---|---|---|
-| 生命保険 | EDINET（個社・特定子会社として単独提出） | 株式会社かんぽ生命保険 |
+| 生命保険 | EDINET（個社・単独提出） | 株式会社かんぽ生命保険 |
 | 生命保険 | PDF | 日本生命保険相互会社 |
 | 生命保険 | PDF | 明治安田生命保険相互会社 |
-| 損害保険 | EDINET（個社・特定子会社として単独提出） | 東京海上日動火災保険株式会社 |
+| 損害保険 | EDINET（個社・単独提出） | 東京海上日動火災保険株式会社 |
 | 損害保険 | PDF | 三井住友海上火災保険株式会社 |
 | 損害保険 | PDF | 損害保険ジャパン株式会社 |
 | 少額短期保険 | PDF | SBIいきいき少額短期保険株式会社 |
