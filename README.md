@@ -47,7 +47,7 @@
   - PDFの形式は会社ごとに大きく異なる：フォントエンコーディング崩れ（ページ画像化＋LLM読み取りで対応）、決算説明資料（要約）と正式なディスクロージャー誌（本体）の混同、ファイル分割方針の違い、サイトのSPA化による発見しにくさ、等
 - [x] 統一スキーマ設計（業界共通コア＋業界別拡張の2層構造）
 - [x] 抽出パイプライン実装（EDINET API v2のXBRL＋各社ディスクロージャー資料のPDF。LLMの出力は原文との照合を通った値のみ採用、文字化けページは画像の複数回読取）
-- [ ] ダッシュボード実装（Streamlit）
+- [x] ダッシュボード実装（Streamlit。`data/output/final.csv` を読み、指標の比較・比較表・出所と確認状況を表示）
 
 ## 検証の方針と人の確認 (Verification and human review)
 
@@ -78,3 +78,7 @@
 🇯🇵 `python src/pipeline.py` の1コマンドで、抽出 → `data/output/extracted.csv`（機械の結果）→ `data/overrides.csv`（人の確認・修正）との合成 → `data/output/final.csv`（BIが読む最終データ）・`final_wide.csv`（Excelで一覧する会社×項目の表）→ 要確認レポートまで生成する。レポートを見て修正があれば `data/overrides.csv` に1行足して同じコマンドを再実行する（LLMの応答はキャッシュされるため再実行は速い）。`overrides.csv` の列：`company_id, field, decision(ok|no_disclosure|needs_fix|override), value, expected_extracted_value, reason, date`。`expected_extracted_value` は確認時の抽出値で、後で抽出値が変わると「古い記録」として警告する。
 
 🇬🇧 `python src/pipeline.py` runs everything: extraction → `data/output/extracted.csv` (machine result) → merge with `data/overrides.csv` (human decisions and corrections) → `data/output/final.csv` (what the BI layer reads) and `final_wide.csv` (a company-by-field grid for Excel) → the exception report. To correct something, add a row to `data/overrides.csv` and re-run; LLM answers are cached, so re-runs are quick. `expected_extracted_value` records what the person looked at, so a decision is reported as stale if the extraction later changes.
+
+🇯🇵 ダッシュボードは `streamlit run src/dashboard.py`（先に `python src/pipeline.py` を実行）。業態・会社で絞り込み、指標ごとの棒グラフ、会社×指標の比較表、各値の出所（資料・ページ）と確認状況を見られる。ソルベンシー比率は算出方式（ESR／SMR）ごとに分けて表示し、値が無い項目は「対象外／開示前／未取得」と理由を区別する。
+
+🇬🇧 Run the dashboard with `streamlit run src/dashboard.py` after `python src/pipeline.py`. It offers industry/company filters, a bar chart per metric, a company-by-metric table and the source (document, page) and review status of every value. Solvency ratios are split by regulatory scale (ESR vs SMR), and missing values are labelled not applicable / not yet disclosed / not found.

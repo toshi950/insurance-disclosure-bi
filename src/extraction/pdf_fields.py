@@ -787,11 +787,26 @@ def _accept(fdef_name: str, r: FieldResult) -> tuple[bool, str]:
     return True, ""
 
 
-def _solvency_basis(r: FieldResult, spec: CompanySpec) -> Optional[SolvencyBasis]:
-    note = (r.note or "").upper()
-    if "ESR" in note or "経済価値" in (r.note or ""):
+def _modal_year(results: dict[str, FieldResult]) -> Optional[int]:
+    """The fiscal year most results of one document refer to (used when a value's own period has no year)."""
+    years = [y for y in (_fiscal_year(r.period) for r in results.values() if r.ok) if y is not None]
+    return max(set(years), key=years.count) if years else None
+
+
+def _solvency_basis(r: FieldResult, spec: CompanySpec, ref_year: Optional[int] = None) -> Optional[SolvencyBasis]:
+    """Which regulatory scale the ratio is on, decided by regulation, not by the model's note:
+    small-amount short-term insurers stay on the old SMR (200%) basis; life and non-life insurers moved
+    to the economic-value-based ESR (100%) basis for fiscal years ending March 2026 and later, even
+    though their booklets still call the figure "ソルベンシー・マージン比率"."""
+    if spec.industry is Industry.SSI:
+        return SolvencyBasis.SMR_200
+    year = _fiscal_year(r.period) or ref_year
+    if year is not None and year >= 2025:
         return SolvencyBasis.ESR_100
-    if "SMR" in note or spec.industry is Industry.SSI:
+    note = (r.note or "")
+    if "ESR" in note.upper() or "経済価値" in note:
+        return SolvencyBasis.ESR_100
+    if "SMR" in note.upper():
         return SolvencyBasis.SMR_200
     return None
 
@@ -903,7 +918,7 @@ def apply_to_record(record: CompanyRecord, spec: CompanySpec, results: dict[str,
                 continue
             setattr(target, name, r.value)
         if name == "solvency_ratio":
-            record.common.solvency_basis = _solvency_basis(r, spec)
+            record.common.solvency_basis = _solvency_basis(r, spec, _modal_year(results))
         record.field_provenance[name] = Provenance(
             method=r.method,
             source_page=r.page,
@@ -1062,7 +1077,7 @@ def run_supplement(company_id: str, record: CompanyRecord) -> dict[str, FieldRes
                 flags.append("source_mismatch")
                 note += f" [置換前のEDINET値（経営者分析の暫定値）: {before:,.1f}]"
             record.common.solvency_ratio = r.value
-            record.common.solvency_basis = _solvency_basis(r, spec)
+            record.common.solvency_basis = _solvency_basis(r, spec, _modal_year(all_results))
             record.field_provenance[n] = Provenance(
                 method=r.method, source_page=r.page, evidence=r.evidence, basis=r.basis, period=r.period,
                 source_doc=r.doc, flags=flags, note=note)

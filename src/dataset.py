@@ -159,6 +159,8 @@ def build_rows(data: list[dict]) -> tuple[list[dict], list[str]]:
                 "basis": p.get("basis", ""), "period": p.get("period", ""), "source_doc": p.get("source_doc", ""),
                 "source_page": "" if p.get("source_page") is None else p["source_page"] + 1,  # PDF viewer page (1-based)
                 "method": method, "flags": ";".join(flags),
+                # which regulatory scale a solvency ratio is on (ESR 100% vs SMR 200%): not comparable across tags
+                "scale_tag": rec.get("common", {}).get("solvency_basis", "") if name == "solvency_ratio" else "",
                 "note": p.get("note", "") if value is not None or method in ("not_applicable", "not_disclosed") else entry.get("gap_reasons", {}).get(name, ""),
                 "override_reason": override_reason, "override_date": override_date,
             })
@@ -167,7 +169,7 @@ def build_rows(data: list[dict]) -> tuple[list[dict], list[str]]:
 
 FINAL_COLUMNS = ["company_id", "company_name", "industry", "source_type", "field", "label", "unit", "final_value",
                  "status", "extracted_value", "basis", "period", "source_doc", "source_page", "method", "flags",
-                 "note", "override_reason", "override_date"]
+                 "scale_tag", "note", "override_reason", "override_date"]
 EXTRACTED_COLUMNS = ["company_id", "company_name", "industry", "source_type", "field", "label", "unit",
                      "extracted_value", "basis", "period", "source_doc", "source_page", "method", "flags", "note"]
 
