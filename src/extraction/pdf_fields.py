@@ -422,7 +422,7 @@ _KANJI_AMOUNT = re.compile(r"^(?:(?P<cho>[\d,]+)兆)?(?:(?P<oku>[\d,]+)億)?(?:(
 
 
 def _parse_kanji_million(value_text: str) -> Optional[float]:
-    """'2兆3,456億円' -> 百万円。単位を含む表記は unit 欄に頼らずここで換算する。"""
+    """'2兆3,456億円'（例・架空の値） -> 百万円。単位を含む表記は unit 欄に頼らずここで換算する。"""
     t = re.sub(r"[\s　]", "", value_text)
     if not re.search(r"[兆億万]", t):
         return None
@@ -503,7 +503,7 @@ def ground_and_convert(fdef: FieldDef, item, texts: list[str], pages: list[int])
 
     suffixed = re.fullmatch(r"(.+?)(百万円|千円|万円|円)", re.sub(r"[\s　]", "", value_text))
     if suffixed and fdef.kind == "amount" and not re.search(r"[兆億]", value_text):
-        value_text, unit = suffixed.group(1), suffixed.group(2)  # e.g. "1,234,567千円"
+        value_text, unit = suffixed.group(1), suffixed.group(2)  # e.g. "1,234,567千円" (illustrative, made-up value)
     kanji = _parse_kanji_million(value_text) if fdef.kind == "amount" else None
     printed = _parse_printed(value_text) if kanji is None else None
     if printed is None and kanji is None and fdef.name in _DASH_IS_ZERO and value_text.strip() in ("－", "-", "―", "ー", "−", "–", "—", "─"):
@@ -516,7 +516,8 @@ def ground_and_convert(fdef: FieldDef, item, texts: list[str], pages: list[int])
     # grounding: the evidence must be quotable from a page that was sent — either
     # verbatim (whitespace-insensitive) or as an ordered subsequence of tokens on a
     # single line (the model often drops the middle of a multi-year row, e.g.
-    # "個人保険 1,200,000 △4.3" out of "個人保険 1,300,000 △5.0 1,200,000 △4.3").
+    # "個人保険 1,200,000 △4.3" out of "個人保険 1,300,000 △5.0 1,200,000 △4.3"; the figures
+    # here are illustrative, made-up values).
     # Either way the reported number must sit in the quoted text.
     ev_sq = _squash(evidence)
     hit_page = next((i for i in pages if ev_sq and ev_sq in _squash(texts[i])), None)
@@ -537,7 +538,7 @@ def ground_and_convert(fdef: FieldDef, item, texts: list[str], pages: list[int])
         return res
     if kanji is None and printed != 0.0:
         core = re.sub(r"[\s　]", "", value_text.replace("，", ","))
-        # the whole number must be a bounded token: "1" inside "1兆2,345億円" is not the amount
+        # the whole number must be a bounded token: "1" inside "1兆2,345億円" (illustrative value) is not the amount
         bounded = re.search(r"(?<![\d,.])" + re.escape(core) + r"(?![\d,]|\.\d|[兆億万])", evidence)
         if not bounded and re.search(r"\d [\d,]", evidence):
             # digits printed with letter-spacing ("2 6 8 ,7 7 9"): token boundaries are lost, so

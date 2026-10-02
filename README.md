@@ -67,6 +67,6 @@
 
 ## データの扱い (Data handling)
 
-🇯🇵 このリポジトリはコードとスキーマのみを公開し、抽出した数値データ・元のPDF・LLM応答のキャッシュは含めない（`data/` はgit管理外）。各自の環境で、各社が公開する資料を取得して生成する。資料の取得時はrobots.txtを確認する。
+🇯🇵 このリポジトリはコードとスキーマのみを公開し、抽出した数値データ・元のPDF・LLM応答のキャッシュは含めない（`data/` はgit管理外）。各自の環境で、各社が公開する資料を取得して生成する。資料の取得時はrobots.txtを確認する。コード内のコメント等に現れる数値例は、説明用の架空の値であり、実在の会社のデータではない。
 
-🇬🇧 This repository publishes code and schema only. Extracted figures, source PDFs and LLM response caches are not included (`data/` is untracked); they are generated locally from each company's public disclosures, with robots.txt checked at fetch time.
+🇬🇧 This repository publishes code and schema only. Extracted figures, source PDFs and LLM response caches are not included (`data/` is untracked); they are generated locally from each company's public disclosures, with robots.txt checked at fetch time. Figures that appear in code comments are illustrative, made-up examples, not real company data.
