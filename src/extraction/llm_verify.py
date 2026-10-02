@@ -92,7 +92,8 @@ def _call_model(model: str, excerpt: str, label: str) -> LLMResult:
         max_tokens=500,
         messages=[{"role": "user", "content": prompt}],
     )
-    raw = resp.content[0].text if resp.content else ""
+    # The strong model may return a ThinkingBlock first; only text blocks carry the answer.
+    raw = "".join(b.text for b in resp.content if getattr(b, "type", None) == "text")
 
     match = re.search(r"\{.*\}", raw, re.S)
     if not match:

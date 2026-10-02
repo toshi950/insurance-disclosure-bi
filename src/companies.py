@@ -28,6 +28,10 @@ class CompanySpec:
     pdf_url: Optional[str] = None
     site_root: Optional[str] = None  # used for robots.txt lookups
     notes: str = ""
+    # Garbled-text-layer PDFs only: (group name, 0-based PDF page indices) located by
+    # hand (2026-10-03). Page discovery by model-read headings proved unreliable, so
+    # image extraction reads only these pages. See extraction/pdf_fields.py.
+    image_page_hints: tuple[tuple[str, tuple[int, ...]], ...] = ()
 
 
 COMPANIES: list[CompanySpec] = [
@@ -90,7 +94,10 @@ COMPANIES: list[CompanySpec] = [
         pdf_url="https://www.sompo-japan.co.jp/-/media/SJNK/files/company/disclosure/2026/sj_disc2026.pdf",
         site_root="https://www.sompo-japan.co.jp",
         notes="「損保ジャパンの現状2026」。⚠️一部テキストがフォントエンコーディング崩れ。"
-        "ページ画像化+LLM読み取りのフォールバックが必要（image_fallback.py参照）。1ファイルに統合、292ページ",
+        "業績データ章（0始まりp115〜）は文字がglyph-ID化しテキスト抽出不可（2026-10-03確認）。"
+        "該当ページを画像で二重読取（pdf_fields.py参照）。1ファイルに統合、292ページ。"
+        "貸借対照表=p130、損益計算書=p135、保険業法に基づく債権=p147。単体ソルベンシー比率は2026年10月末開示予定（p37）で未開示",
+        image_page_hints=(("reserves", (130,)), ("pl", (135,)), ("loans", (147,))),
     ),
     CompanySpec(
         company_id="sbi_ikiiki_ssi",

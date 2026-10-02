@@ -70,6 +70,9 @@ class Provenance(BaseModel):
     method: ExtractionMethod = ExtractionMethod.NOT_ATTEMPTED
     source_page: Optional[int] = None
     note: Optional[str] = None
+    evidence: Optional[str] = Field(None, description="原文からの引用（検算済みの根拠）")
+    basis: Optional[str] = Field(None, description="単体/連結/不明（PDF抽出時にLLMが判定）")
+    period: Optional[str] = Field(None, description="対象期間（例：2026年3月期）")
 
 
 class CommonCore(BaseModel):
@@ -171,6 +174,11 @@ class CompanyRecord(BaseModel):
         False,
         description="PDF表紙の【会社名】【事業年度】【提出日】を機械的に検証済みか。"
         "WebSearchの帰属表示は信頼しないという実地検証の教訓に基づく必須チェック",
+    )
+
+    field_provenance: dict[str, Provenance] = Field(
+        default_factory=dict,
+        description="フィールド名 -> 出所（抽出手法・ページ・原文引用など）。PDF抽出で全フィールドに付与",
     )
 
     common: CommonCore = Field(default_factory=CommonCore)
