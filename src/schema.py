@@ -61,19 +61,6 @@ class SolvencyBasis(str, Enum):
     SMR_200 = "SMR_200%基準"  # 旧来のソルベンシー・マージン比率 (少短)
 
 
-class ReserveMethodBasis(str, Enum):
-    """Which axis a company's 支払備金 breakdown was disclosed on. Recorded
-    because the *actual* disclosed axis (再保険控除前後 × 地震/自賠責特掲, per
-    the Tokio Marine実データ) turned out to differ from the originally
-    assumed 普通備金/IBNR axis — both are represented so extraction doesn't
-    force data into the wrong shape.
-    """
-
-    NORMAL_IBNR = "normal_ibnr"  # 普通備金 / IBNR
-    NET_OF_REINSURANCE = "net_of_reinsurance"  # 出再控除前後の差引 × 地震・自賠責特掲
-    SINGLE_FIGURE = "single_figure"  # 内訳非開示、単一集計値のみ (生保はこれが標準)
-
-
 class Provenance(BaseModel):
     """Where a value came from and how much to trust it. Attached to
     individual fields that are worth auditing (the headline/ambiguous ones),
@@ -101,25 +88,14 @@ class CommonCore(BaseModel):
     solvency_basis: Optional[SolvencyBasis] = None
     solvency_provenance: Optional[Provenance] = None
 
-    # --- 責任準備金 (2026-09-23: 生損保共通と判明、共通コアへ格上げ済み) ---
-    policy_reserve_ordinary: Optional[float] = Field(
-        None, description="普通責任準備金（百万円）。これ以上の内訳分解はしない"
+    # --- 責任準備金・支払備金（2026-10-03決定：貸借対照表計上の総額のみを使い、内訳は持たない）---
+    # 危険準備金・受再保険分・出再控除前後・普通備金/IBNR等の内訳は会社ごとの開示軸が揃わず、
+    # 比較可能性を損なうため分解しない。責任準備金は危険準備金を含むB/S計上額の全額。
+    policy_reserve_total: Optional[float] = Field(
+        None, description="責任準備金（百万円）。危険準備金を含む貸借対照表計上額の全額"
     )
-    policy_reserve_contingency: Optional[float] = Field(
-        None,
-        description="危険準備金（百万円）。生保拡張のcontingency_reserve_breakdownで内訳を扱う",
-    )
-
-    # --- 支払備金 ---
     claims_reserve_total: Optional[float] = Field(
-        None, description="支払備金・単一集計値（百万円）。必須項目"
-    )
-    claims_reserve_basis: Optional[ReserveMethodBasis] = None
-    claims_reserve_normal: Optional[float] = Field(
-        None, description="普通備金（百万円）。任意サブフィールド、損保・少短で開示があれば"
-    )
-    claims_reserve_ibnr: Optional[float] = Field(
-        None, description="IBNR・既発生未報告備金（百万円）。任意サブフィールド"
+        None, description="支払備金（百万円）。貸借対照表計上額の全額（内訳は持たない）"
     )
     claims_reserve_provenance: Optional[Provenance] = None
 
@@ -145,10 +121,6 @@ class LifeExtension(BaseModel):
     embedded_value: Optional[float] = Field(
         None,
         description="実質純資産額 or EEV（百万円）。任意開示のため個社EDINETには基本出てこない",
-    )
-    contingency_reserve_breakdown: Optional[dict[str, float]] = Field(
-        None,
-        description="危険準備金の内訳（施行規則第69条：保険リスク対応/予定利率リスク対応 等）",
     )
     mutual_company_fund: Optional[float] = Field(
         None, description="基金（百万円）。相互会社特有科目、株式会社形態の場合はNone"

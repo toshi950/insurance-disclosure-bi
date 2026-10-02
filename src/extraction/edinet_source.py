@@ -25,6 +25,7 @@ from __future__ import annotations
 import csv
 import io
 import os
+import re
 import sys
 import zipfile
 from dataclasses import dataclass, field
@@ -42,6 +43,7 @@ from schema import (  # noqa: E402
     ExtractionMethod,
     Industry,
     Provenance,
+    SolvencyBasis,
     SourceType,
 )
 
@@ -166,12 +168,93 @@ def _is_plain_nonconsolidated(f: Fact) -> bool:
     ) and f.context.count("Member") == 1
 
 
+def _is_plain_nonconsolidated_kpi(f: Fact) -> bool:
+    """経営指標等（`*SummaryOfBusinessResults*`）は scope が「個別」にならない
+    ことがあるため、文脈IDのみで個別・当期を判定する。"""
+    return f.period in _CURRENT_PERIODS and f.context.endswith(
+        ("CurrentYearInstant_NonConsolidatedMember", "CurrentYearDuration_NonConsolidatedMember")
+    ) and f.context.count("Member") == 1
+
+
 def _to_million_yen(raw: str) -> Optional[float]:
     raw = raw.strip().replace(",", "")
     try:
         return float(raw) / YEN_PER_MILLION
     except ValueError:
         return None  # "－" etc.: the filing shows no figure
+
+
+# ---------------------------------------------------------------------------
+# Text-block parsing (notes that EDINET exposes only as flattened text)
+# ---------------------------------------------------------------------------
+# 注記・経営者分析の多くはXBRLの数値タグではなくテキストブロックで提出され、表は
+# 「ラベル＋数値」が空白なしで連結された平文になる。そのため、(1) ラベル直後の数値
+# トークンのみを読み、(2) 合計が貸借対照表本体（構造化タグ）と一致するかを必ず
+# 検算し、(3) 一致しなければ値を捨てて None のままにする（推測で埋めない）。
+
+_NUM = re.compile(r"(△?\d{1,3}(?:,\d{3})*|－)")
+
+
+def _numbers_after(text: str, label: str, count: int) -> Optional[list[Optional[float]]]:
+    """First `count` numeric tokens following `label` (`－` -> 0.0, `△` -> negative).
+    Returns None if the label is absent or too few tokens follow."""
+    i = text.find(label)
+    if i < 0:
+        return None
+    tokens = _NUM.findall(text[i + len(label):])[:count]
+    if len(tokens) < count:
+        return None
+    out: list[Optional[float]] = []
+    for t in tokens:
+        if t == "－":
+            out.append(0.0)
+        else:
+            neg = t.startswith("△")
+            v = float(t.lstrip("△").replace(",", ""))
+            out.append(-v if neg else v)
+    return out
+
+
+def _text_block(facts: list[Fact], element_prefix: str) -> Optional[str]:
+    """Individual-context (non-consolidated) text block whose element name
+    starts with `element_prefix`."""
+    for f in facts:
+        if f.element.startswith(element_prefix) and f.context.endswith(
+            ("CurrentYearInstant_NonConsolidatedMember", "CurrentYearDuration_NonConsolidatedMember")
+        ):
+            return f.value
+    return None
+
+
+_RECEIVABLE_LABELS = (
+    "破産更生債権及びこれらに準ずる債権額",
+    "危険債権額",
+    "三月以上延滞債権額",
+    "貸付条件緩和債権額",
+)
+
+
+def parse_asset_classification(text: str) -> Optional[dict[str, float]]:
+    """保険業法に基づく債権区分（百万円）。「該当するものはありません」は4区分とも0の明示開示。
+    表形式の場合は合計との一致を検算。正常債権はXBRL注記に出ないので扱わない。"""
+    if "該当するものはありません" in text:
+        return {"bankrupt": 0.0, "doubtful": 0.0, "overdue_3m": 0.0, "restructured": 0.0}
+    vals = []
+    for label in _RECEIVABLE_LABELS:
+        n = _numbers_after(text, label, 2)
+        if n is None:
+            return None
+        vals.append(n[1])
+    total = _numbers_after(text, "合計", 2)
+    if total is None or abs(sum(vals) - total[1]) > 1:
+        return None
+    return dict(zip(("bankrupt", "doubtful", "overdue_3m", "restructured"), vals))
+
+
+def parse_consolidated_solvency(text: str) -> Optional[float]:
+    """経営者分析の「連結ソルベンシー・マージン比率は181％」。個別の比率はXBRLに存在しない。"""
+    m = re.search(r"連結ソルベンシー・マージン比率は(\d+(?:\.\d+)?)％", text)
+    return float(m.group(1)) if m else None
 
 
 @dataclass
@@ -183,8 +266,6 @@ class EdinetExtraction:
 
 
 # schema field -> candidate XBRL element names, first match wins.
-# 責任準備金（普通/危険の内訳）は貸借対照表本体では合計のみ（PolicyReserveLiabilitiesINS）で、
-# スキーマの policy_reserve_ordinary/contingency は注記側の内訳に当たるため未対応（残作業）。
 COMMON_MAP: dict[str, tuple[str, ...]] = {
     "total_assets": ("Assets",),
     "net_assets": ("NetAssets",),
@@ -242,11 +323,58 @@ def extract(company_id: str, zip_path: Optional[Path] = None) -> EdinetExtractio
         else:
             setattr(record.common, field_name, value)
 
-    record.common.claims_reserve_provenance = Provenance(
+    common = record.common
+    kpi = {f.element: f for f in facts if _is_plain_nonconsolidated_kpi(f)}
+
+    def kpi_value(name: str) -> Optional[float]:
+        f = kpi.get(name)
+        if f is None:
+            return None
+        try:
+            return float(f.value.replace(",", ""))
+        except ValueError:
+            return None  # "－"
+
+    # --- 責任準備金・支払備金：貸借対照表の総額のみ（内訳は取らない。schema.py参照）---
+    common.policy_reserve_total = pick(("PolicyReserveLiabilitiesINS",))
+    if common.policy_reserve_total is None:
+        missing.append("policy_reserve_total")
+    common.claims_reserve_provenance = Provenance(
         method=ExtractionMethod.EDINET_XBRL,
-        note="OutstandingClaimsLiabilitiesINS（貸借対照表の支払備金・単一集計値）",
+        note="OutstandingClaimsLiabilitiesINS（貸借対照表の支払備金・総額）",
     )
 
+    # --- 資産自己査定（保険業法に基づく債権区分）。正常債権は注記に出ない ---
+    loans_text = _text_block(facts, "NotesRegardingLoansBasedOnInsuranceBusinessAct")
+    loans = parse_asset_classification(loans_text) if loans_text else None
+    if loans:
+        common.assets_bankrupt_claims = loans["bankrupt"]
+        common.assets_doubtful_claims = loans["doubtful"]
+        common.assets_substandard_claims = loans["overdue_3m"] + loans["restructured"]
+    else:
+        missing += ["assets_bankrupt_claims", "assets_doubtful_claims", "assets_substandard_claims"]
+    missing.append("assets_normal_claims")
+
+    # --- ソルベンシー比率：連結ベースで取る方針（2026-10-03決定）。個別の比率はXBRLに無く、
+    # 経営者分析に本文記載があれば採用、無ければ None（PDF側で補完）---
+    md_a = next((f.value for f in facts if f.element.startswith("ManagementAnalysis")), None)
+    ratio = parse_consolidated_solvency(md_a) if md_a else None
+    if ratio is not None:
+        common.solvency_ratio = ratio
+        common.solvency_basis = SolvencyBasis.ESR_100
+        common.solvency_provenance = Provenance(
+            method=ExtractionMethod.EDINET_XBRL,
+            note="経営者分析の連結ソルベンシー・マージン比率（経済価値ベース、監査未済の暫定値）。"
+            "ソルベンシー比率は連結ベースで取る方針",
+        )
+    else:
+        missing.append("solvency_ratio")
+        common.solvency_provenance = Provenance(
+            method=ExtractionMethod.NOT_ATTEMPTED,
+            note="EDINET XBRLの本文に比率の数値記載なし（連結・個別とも）。PDF側で補完する",
+        )
+
+    # --- 業界別拡張 ---
     if spec.industry is Industry.NON_LIFE:
         ext = record.extension()
         for field_name, candidates in NON_LIFE_MAP.items():
@@ -255,6 +383,32 @@ def extract(company_id: str, zip_path: Optional[Path] = None) -> EdinetExtractio
                 missing.append(field_name)
             else:
                 setattr(ext, field_name, value)
+        loss, expense = kpi_value("NetLossRatioSummaryOfBusinessResultsINS"), kpi_value(
+            "NetOperatingExpenseRatioSummaryOfBusinessResultsINS"
+        )
+        if loss is not None:
+            ext.loss_ratio = round(loss * 100, 2)
+        else:
+            missing.append("loss_ratio")
+        if expense is not None:
+            ext.expense_ratio = round(expense * 100, 2)
+        else:
+            missing.append("expense_ratio")
+        if loss is not None and expense is not None:
+            ext.combined_ratio = round((loss + expense) * 100, 2)
+        else:
+            missing.append("combined_ratio")
+        # 異常危険準備金：個別XBRLにタグ・注記なし（「その他の責任準備金」に含まれ内訳非開示）
+        missing.append("catastrophe_reserve")
+    elif spec.industry is Industry.LIFE:
+        ext = record.extension()
+        base = kpi_value("CorePofitSummaryOfBusinessResults")  # 基礎利益（タクソノミ上の綴りは CorePofit）
+        if base is not None:
+            ext.base_profit = base / YEN_PER_MILLION
+        else:
+            missing.append("base_profit")
+        # 保有契約高・新契約高・年換算保険料・解約失効率・EV：個別XBRLのタグに無い（PDF側で補完）
+        missing += ["policies_in_force", "new_policies", "annualized_premium", "lapse_rate", "embedded_value"]
 
     return EdinetExtraction(record, identity, True, missing)
 
