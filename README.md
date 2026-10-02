@@ -56,14 +56,16 @@
 - 本文が文字化けしているページは、ページ画像を複数回読み取り、一致した値のみ採用する。
 - 各値に、抽出方法・ページ・引用・単体/連結・期間の出所メモを付ける。抽出方法別の件数は `python src/pipeline.py` の出力で確認できる。
 - 人が関与する箇所は2つ：①文字化けページの位置指定（`image_page_hints`）、②目視確認済みの値の上書き（`manual_values`、現在は0件）。いずれも根拠を残す運用で、「全自動」とは主張しない。
-- 未開示・廃止の項目は推測で埋めず空欄にする。
+- 未開示・廃止の項目は推測で埋めず空欄にする。制度上存在しない項目（例：少額短期保険の債権区分）は「該当なし」として区別する。
+- 人が見たほうがよい項目（未取得、情報源どうしの不一致、画像読取、連結値の採用、緩い照合で通った引用）は、`pipeline.py` が要確認レポート（ページ画像付きHTML）を `data/review/` に出力する。確認結果は台帳に記録でき、値が変わるまで次回から非表示になる（`python src/review.py confirm ...`）。
 
 🇬🇧
 - A value returned by the LLM is accepted only if its quoted evidence is verifiable in the page text and contains the number; unit conversion, sums and ratios are computed in code, not by the model.
 - Pages with a garbled text layer are read from page images several times; only values on which the reads agree are kept.
 - Every value carries provenance (method, page, quote, entity basis, period). The count of values per extraction path is printed by `python src/pipeline.py`.
 - Humans are involved in two places: locating pages in garbled documents (`image_page_hints`) and overriding values they confirmed by eye (`manual_values`, currently empty). Both leave an audit trail; the project does not claim to be fully automatic.
-- Items that are undisclosed or discontinued are left blank, never guessed.
+- Items that are undisclosed or discontinued are left blank, never guessed; items that cannot exist by regulation are marked not-applicable.
+- `pipeline.py` writes an exception report (HTML with page images) to `data/review/` for items a person should check: gaps, disagreeing sources, image-read values, consolidated substitutes and quotes that passed only the loose check. Decisions are kept in a ledger and hide an item until its value changes.
 
 ## データの扱い (Data handling)
 

@@ -42,6 +42,8 @@ class CompanySpec:
     manual_values: tuple[tuple[str, float, str], ...] = ()
     # (field, note) — fields that cannot exist for this entity by regulation (not "failed to extract").
     not_applicable: tuple[tuple[str, str], ...] = ()
+    # (field, note) — fields not yet disclosed by the entity (expected; revisit when published).
+    not_yet_disclosed: tuple[tuple[str, str], ...] = ()
     name_aliases: tuple[str, ...] = ()  # short forms used on booklet covers (identity check accepts them)
 
 
@@ -64,6 +66,10 @@ COMPANIES: list[CompanySpec] = [
     ),
     CompanySpec(
         company_id="tokio_marine_nichido",
+        not_yet_disclosed=(
+            ("solvency_ratio", "2026年3月期のソルベンシー比率は、令和7年内閣府令第71号の附則による経過措置で"
+                               "事業年度経過後7月以内（2026-10-31まで）に開示予定。2026-11-02に取得する予定"),
+        ),
         company_name="東京海上日動火災保険株式会社",
         industry=Industry.NON_LIFE,
         source_type=SourceType.EDINET,
@@ -98,6 +104,10 @@ COMPANIES: list[CompanySpec] = [
     ),
     CompanySpec(
         company_id="ms_sompo",
+        not_yet_disclosed=(
+            ("solvency_ratio", "2026年3月期のソルベンシー比率は、令和7年内閣府令第71号の附則による経過措置で"
+                               "事業年度経過後7月以内（2026-10-31まで）に開示予定。2026-11-02に取得する予定"),
+        ),
         company_name="三井住友海上火災保険株式会社",
         industry=Industry.NON_LIFE,
         source_type=SourceType.PDF,
@@ -108,6 +118,10 @@ COMPANIES: list[CompanySpec] = [
     ),
     CompanySpec(
         company_id="sompo_japan",
+        not_yet_disclosed=(
+            ("solvency_ratio", "2026年3月期のソルベンシー比率は、令和7年内閣府令第71号の附則による経過措置で"
+                               "事業年度経過後7月以内（2026-10-31まで）に開示予定。2026-11-02に取得する予定"),
+        ),
         company_name="損害保険ジャパン株式会社",
         industry=Industry.NON_LIFE,
         source_type=SourceType.PDF,

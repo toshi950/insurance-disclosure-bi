@@ -75,6 +75,12 @@ class Provenance(BaseModel):
     evidence: Optional[str] = Field(None, description="原文からの引用（検算済みの根拠）")
     basis: Optional[str] = Field(None, description="単体/連結/不明（PDF抽出時にLLMが判定）")
     period: Optional[str] = Field(None, description="対象期間（例：2026年3月期）")
+    source_doc: Optional[str] = Field(None, description="資料の識別子（data/raw/{識別子}.pdf）")
+    flags: list[str] = Field(
+        default_factory=list,
+        description="要確認フラグ（loose_grounding / image_read / image_majority / consolidated_substitute / "
+        "source_mismatch）。review.py が要確認資料の出力条件に使う",
+    )
 
 
 class CommonCore(BaseModel):

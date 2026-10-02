@@ -425,6 +425,8 @@ class FieldResult:
     note: Optional[str] = None
     model: Optional[str] = None
     method: ExtractionMethod = ExtractionMethod.LLM_VERIFIED
+    doc: Optional[str] = None  # which document (data/raw/{doc}.pdf) `page` refers to
+    flags: list[str] = field(default_factory=list)  # review flags, see schema.Provenance.flags
 
 
 def _digits(s: str) -> str:
@@ -540,6 +542,7 @@ def ground_and_convert(fdef: FieldDef, item, texts: list[str], pages: list[int])
         hit_page = _loose_page(evidence, value_text, texts, pages)
         if hit_page is not None:
             res.note = ((res.note or "") + " [引用は複数行/段組にまたがるため緩い照合（数値＋語句がページに存在）]").strip()
+            res.flags.append("loose_grounding")
     if hit_page is None:
         res.reason = "evidence not found verbatim in sent pages"
         return res
@@ -610,10 +613,12 @@ def extract_group(spec: CompanySpec, group: Group, texts: Optional[list[str]] = 
         for run in runs:  # cheap first; a later (strong) run only fills what the cheap run could not ground
             r = ground_and_convert(f, (run["data"].get("fields") or {}).get(f.name), texts, pages)
             r.model = run["model"]
+            r.doc = doc
             if r.ok:
                 best = r
                 break
             best = best or r
+        best.doc = doc
         final[f.name] = best
     return final
 
@@ -760,6 +765,10 @@ def extract_group_images(spec: CompanySpec, group: Group, fields: list[FieldDef]
             r.note = f"{it.get('note') or ''} [画像読取・{len(reads)}回中{n_agree}回一致、対象ページ {pages}]".strip()
             r.model = f"{CHEAP_MODEL}+{STRONG_MODEL}"
             r.method = ExtractionMethod.LLM_IMAGE_FALLBACK
+            r.doc = spec.company_id
+            r.flags.append("image_read")
+            if n_agree < len(reads):
+                r.flags.append("image_majority")
         out[f.name] = r
     return out
 
@@ -793,6 +802,7 @@ def prefer_consolidated_solvency(results: dict[str, FieldResult]) -> None:
     c = results.pop("solvency_ratio_consol", None)
     if c is not None and c.ok and c.basis == "連結":
         c.name = "solvency_ratio"
+        c.flags.append("consolidated_substitute")
         results["solvency_ratio"] = c
 
 
@@ -803,7 +813,8 @@ def derive_substandard(results: dict[str, FieldResult]) -> None:
     if a and b and a.ok and b.ok:
         r = FieldResult("assets_substandard_claims", value=a.value + b.value, ok=True,
                         page=a.page, basis=a.basis if a.basis == b.basis else "不明",
-                        period=a.period, model=a.model,
+                        period=a.period, model=a.model, doc=a.doc,
+                        flags=sorted(set(a.flags) | set(b.flags)), method=a.method,
                         evidence=f"{a.evidence} / {b.evidence}",
                         note="三月以上延滞債権＋貸付条件緩和債権の合算（コード側で計算）")
     else:
@@ -824,6 +835,7 @@ def derive_life_totals(results: dict[str, FieldResult]) -> None:
             results[target] = FieldResult(
                 target, value=a.value + b.value, ok=True, page=a.page,
                 basis=a.basis if a.basis == b.basis else "不明", period=a.period, model=a.model,
+                doc=a.doc, flags=sorted(set(a.flags) | set(b.flags)), method=a.method,
                 evidence=f"{a.evidence} / {b.evidence}",
                 note="個人保険＋個人年金保険の合計（団体除く、コード側で計算）",
             )
@@ -898,6 +910,8 @@ def apply_to_record(record: CompanyRecord, spec: CompanySpec, results: dict[str,
             evidence=r.evidence,
             basis=r.basis,
             period=r.period,
+            source_doc=r.doc,
+            flags=list(r.flags),
             note=(r.note or "") if r.method is ExtractionMethod.LLM_IMAGE_FALLBACK
             else f"{r.note or ''} [model={r.model}; 引用はページ本文と照合済み]".strip(),
         )
@@ -1020,16 +1034,39 @@ def run_supplement(company_id: str, record: CompanyRecord) -> dict[str, FieldRes
                 all_results[name] = r
             else:
                 all_results.setdefault(name, r)
-    apply_to_record(record, spec, {n: r for n, r in all_results.items() if r.ok and _is_empty(record, n)})
+    def current(name: str) -> Optional[float]:
+        if hasattr(record.common, name):
+            return getattr(record.common, name)
+        ext = record.life_ext or record.non_life_ext or record.ssi_ext
+        return getattr(ext, name, None) if ext is not None else None
+
+    def differs(a: float, b: float) -> bool:
+        return abs(a - b) > max(0.05, 0.001 * abs(a))  # ratios: 0.05pt; amounts: 0.1%
+
+    # 1) cross-source check: EDINET already holds a value and the booklet gives another one
     for n, r in all_results.items():
-        if n == "solvency_ratio" and r.ok:  # official booklet figure supersedes EDINET's provisional one
+        cur = current(n)
+        if r.ok and cur is not None and n != "solvency_ratio" and differs(cur, r.value):
+            prov = record.field_provenance.setdefault(n, Provenance(method=ExtractionMethod.EDINET_XBRL))
+            prov.flags.append("source_mismatch")
+            prov.note = f"{prov.note or ''} [自社資料{r.doc}.pdfの値は {r.value:,.2f}（EDINET値を採用）]".strip()
+    # 2) fill the gaps
+    apply_to_record(record, spec, {n: r for n, r in all_results.items() if r.ok and _is_empty(record, n)})
+    # 3) the booklet's official solvency ratio supersedes EDINET's provisional MD&A figure
+    for n, r in all_results.items():
+        if n == "solvency_ratio" and r.ok:
+            before = current(n)
+            flags = list(r.flags)
+            note = f"{r.note or ''} [model={r.model}; 引用はページ本文と照合済み]".strip()
+            if before is not None and differs(before, r.value):
+                flags.append("source_mismatch")
+                note += f" [置換前のEDINET値（経営者分析の暫定値）: {before:,.1f}]"
             record.common.solvency_ratio = r.value
             record.common.solvency_basis = _solvency_basis(r, spec)
             record.field_provenance[n] = Provenance(
                 method=r.method, source_page=r.page, evidence=r.evidence, basis=r.basis, period=r.period,
-                note=f"{r.note or ''} [model={r.model}; 引用はページ本文と照合済み]".strip())
+                source_doc=r.doc, flags=flags, note=note)
     return all_results
-
 
 if __name__ == "__main__":
     ids = sys.argv[1:] or ["nippon_life", "meiji_yasuda", "ms_sompo", "sompo_japan", "sbi_ikiiki_ssi", "sakura_ssi"]

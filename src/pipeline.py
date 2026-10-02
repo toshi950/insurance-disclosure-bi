@@ -94,6 +94,12 @@ def method_counts(items: list[dict]) -> dict[str, int]:
     return counts
 
 
+def apply_not_yet_disclosed(record: CompanyRecord, spec) -> None:
+    for name, note in spec.not_yet_disclosed:
+        if pdf_fields._is_empty(record, name):
+            record.field_provenance[name] = Provenance(method=ExtractionMethod.NOT_DISCLOSED, note=note)
+
+
 def build_all() -> list[dict]:
     results = []
     for spec in COMPANIES:
@@ -106,17 +112,21 @@ def build_all() -> list[dict]:
             supp = pdf_fields.run_supplement(spec.company_id, record)
             gaps = [n for n in ex.missing if pdf_fields._is_empty(record, n)] + [
                 n for n, r in supp.items() if not r.ok and pdf_fields._is_empty(record, n) and n not in ex.missing]
+            reasons = {n: (supp[n].reason if n in supp else "EDINET XBRLに無く、自社資料の補完対象外") for n in gaps}
         else:
             record, pdf_results = pdf_fields.run_company(spec.company_id)
             gaps = [n for n, r in pdf_results.items() if not r.ok]
+            reasons = {n: pdf_results[n].reason for n in gaps}
         apply_manual_values(record, spec)
         apply_not_applicable(record, spec)
-        na = {n for n, _ in spec.not_applicable}
-        gaps = [n for n in gaps if pdf_fields._is_empty(record, n) and n not in na]
+        apply_not_yet_disclosed(record, spec)
+        expected = {n for n, _ in spec.not_applicable} | {n for n, _ in spec.not_yet_disclosed}
+        gaps = [n for n in gaps if pdf_fields._is_empty(record, n) and n not in expected]
         derive_combined_ratio(record)
         results.append({
             "record": record.model_dump(mode="json", exclude_none=True),
             "gaps": gaps,
+            "gap_reasons": {n: reasons.get(n, "") for n in gaps},
             "sanity_problems": sanity_checks(record),
         })
     return results
@@ -132,3 +142,7 @@ if __name__ == "__main__":
         rec = item["record"]
         n = len(_flat(CompanyRecord.model_validate(rec)))
         print(f"  {rec['company_id']:<22} {n:>2} numeric fields | gaps {len(item['gaps']):>2} | sanity: {item['sanity_problems'] or 'ok'}")
+    from review import generate  # local import: review needs the PDFs under data/raw
+
+    path, counts = generate(data)
+    print(f"  review report: {path.name} ({counts})")
