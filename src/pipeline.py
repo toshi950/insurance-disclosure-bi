@@ -41,6 +41,11 @@ def apply_manual_values(record: CompanyRecord, spec) -> None:
             record.field_provenance[name] = Provenance(method=ExtractionMethod.MANUAL_VERIFIED, note=note)
 
 
+def apply_not_applicable(record: CompanyRecord, spec) -> None:
+    for name, note in spec.not_applicable:
+        record.field_provenance[name] = Provenance(method=ExtractionMethod.NOT_APPLICABLE, note=note)
+
+
 def derive_combined_ratio(record: CompanyRecord) -> None:
     ext = record.non_life_ext or record.ssi_ext
     if ext is None:
@@ -105,7 +110,9 @@ def build_all() -> list[dict]:
             record, pdf_results = pdf_fields.run_company(spec.company_id)
             gaps = [n for n, r in pdf_results.items() if not r.ok]
         apply_manual_values(record, spec)
-        gaps = [n for n in gaps if pdf_fields._is_empty(record, n)]
+        apply_not_applicable(record, spec)
+        na = {n for n, _ in spec.not_applicable}
+        gaps = [n for n in gaps if pdf_fields._is_empty(record, n) and n not in na]
         derive_combined_ratio(record)
         results.append({
             "record": record.model_dump(mode="json", exclude_none=True),

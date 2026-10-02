@@ -40,6 +40,8 @@ class CompanySpec:
     # (field, value in 百万円/%, note) — values a person confirmed against the source by eye; applied
     # after extraction only where the field is still empty.
     manual_values: tuple[tuple[str, float, str], ...] = ()
+    # (field, note) — fields that cannot exist for this entity by regulation (not "failed to extract").
+    not_applicable: tuple[tuple[str, str], ...] = ()
     name_aliases: tuple[str, ...] = ()  # short forms used on booklet covers (identity check accepts them)
 
 
@@ -123,8 +125,16 @@ COMPANIES: list[CompanySpec] = [
         industry=Industry.SSI,
         source_type=SourceType.PDF,
         pdf_url="https://www.i-sedai.com/pdf/disclosure2025.pdf",
+        not_applicable=tuple(
+            (f, "少額短期保険業者は、資産の運用方法が預金・国債等に限定され（保険業法第272条の12、"
+                "施行規則第211条の26〜28）、貸付金等の債権区分の対象資産を持たず、説明書類の記載事項にも"
+                "債権区分がない（施行規則第211条の37）。制度上該当なし")
+            for f in ("assets_bankrupt_claims", "assets_doubtful_claims", "assets_substandard_claims", "assets_normal_claims")
+        ),
         site_root="https://www.i-sedai.com",
-        notes="2025年度版。実地検証済み。ソルベンシー・マージン比率が1,000%を超える水準であることを確認"
+        image_page_hints=(("nonlife_claims", (21,)),),
+        notes="2025年度版。実地検証済み。ソルベンシー・マージン比率が1,000%を超える水準であることを確認。"
+        "正味支払保険金の表は数値がテキスト層に出ないためPDF 22ページ目を画像で読む"
         "（生損保のESRとは別基準・別スケール）。ドメインはi-sedai.com"
         "（別会社の類似名「SBI日本少額短期保険」n-ssi.co.jpと混同しないこと）",
     ),
@@ -133,9 +143,17 @@ COMPANIES: list[CompanySpec] = [
         company_name="さくら少額短期保険株式会社",
         industry=Industry.SSI,
         source_type=SourceType.PDF,
-        pdf_url="https://www.sakura-ssi.co.jp/wp/wp-content/uploads/2025/07/disclosure_2025.pdf",
+        pdf_url="https://www.sakura-ssi.co.jp/wp/wp-content/uploads/2026/07/disclosure_2026.pdf",
+        not_applicable=tuple(
+            (f, "少額短期保険業者は、資産の運用方法が預金・国債等に限定され（保険業法第272条の12、"
+                "施行規則第211条の26〜28）、貸付金等の債権区分の対象資産を持たず、説明書類の記載事項にも"
+                "債権区分がない（施行規則第211条の37）。制度上該当なし")
+            for f in ("assets_bankrupt_claims", "assets_doubtful_claims", "assets_substandard_claims", "assets_normal_claims")
+        ),
+
         site_root="https://www.sakura-ssi.co.jp",
-        notes="2025年度版。実地検証済み。31ページの小規模開示",
+        notes="令和7年度（2025年4月〜2026年3月）版。2026-10-03に令和6年度版（2025年3月期）から差し替え"
+        "（他社と事業年度を揃えるため）。小規模開示",
     ),
 ]
 

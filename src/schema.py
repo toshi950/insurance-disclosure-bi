@@ -47,6 +47,7 @@ class ExtractionMethod(str, Enum):
     # ループ設計原則: only used when deterministic extraction fails, e.g.
     # font-encoding corruption as seen with 損保ジャパン)
     MANUAL_VERIFIED = "manual_verified"  # 人が原資料を目視確認して確定した値（根拠は Provenance.note）
+    NOT_APPLICABLE = "not_applicable"  # 制度上その項目が存在しない（根拠条文を Provenance.note に記録）
     NOT_DISCLOSED = "not_disclosed"  # confirmed absent from the source
     NOT_ATTEMPTED = "not_attempted"  # extraction not yet run for this field
 

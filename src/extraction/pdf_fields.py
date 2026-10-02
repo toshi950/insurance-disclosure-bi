@@ -257,11 +257,21 @@ GROUPS: tuple[Group, ...] = (
         rank_by=("正味支払保険金", "損害率", "事業費率", "コンバインド", "合計"),
         fields=(
             FieldDef("net_premiums_written", "amount", "正味収入保険料（全種目合計、最新年度）"),
-            FieldDef("net_claims_paid", "amount", "正味支払保険金（全種目合計、最新年度）"),
             FieldDef("loss_ratio", "percent", "損害率（％、全種目合計。「正味損害率」またはE.I.損害率等の区別があれば note に書く）"),
             FieldDef("expense_ratio", "percent", "事業費率（％、全種目合計。「正味事業費率」等）"),
         ),
         prompt_note="全種目合計の1行を使う（火災・自動車等の種目別の行ではない）。",
+        max_pages=5,
+    ),
+    Group(
+        "nonlife_claims",
+        NONLIFE_LIKE,
+        must_all=("正味支払保険金",),
+        rank_by=("元受正味支払保険金", "回収再保険金", "保険引受利益", "合計", "損害率"),
+        fields=(
+            FieldDef("net_claims_paid", "amount", "正味支払保険金（全種目合計の1行、最新年度）。「元受正味支払保険金」「回収再保険金」ではなく「正味支払保険金」の合計"),
+        ),
+        prompt_note="全種目合計の1行を使う（種目別の行ではない）。複数年度の列が並ぶ場合は最新年度の列。",
         max_pages=5,
     ),
 )
@@ -271,7 +281,10 @@ _UNIT_TO_MILLION = {"百万円": 1.0, "千円": 0.001, "円": 1e-6, "億円": 10
 
 
 def groups_for(spec: CompanySpec) -> list[Group]:
-    return [g for g in GROUPS if spec.industry in g.industries]
+    """Groups worth running for `spec`: skip those whose every target field is regulation-N/A."""
+    na = {f for f, _ in spec.not_applicable}
+    return [g for g in GROUPS if spec.industry in g.industries
+            and not (na and set(_targets(g)) <= na)]
 
 
 # ---------------------------------------------------------------------------
@@ -465,7 +478,7 @@ def _loose_page(evidence: str, value_text: str, texts: list[str], pages: list[in
     wrapped rows): the number must occur on the page as a whole token and at
     least 85% of the evidence's character trigrams must occur on that page
     (a fabricated sentence around a real number scores ~0.7 or less)."""
-    core = re.sub(r"[\s　]", "", value_text.replace("，", ","))
+    core = re.sub(r"[\s　]", "", value_text.replace("，", ",")).rstrip("％%")
     e = _squash(evidence)
     grams = {e[i:i + 3] for i in range(len(e) - 2)}
     if not grams:
@@ -537,7 +550,7 @@ def ground_and_convert(fdef: FieldDef, item, texts: list[str], pages: list[int])
         res.reason = f"evidence lacks expected label {fdef.evidence_any}"
         return res
     if kanji is None and printed != 0.0:
-        core = re.sub(r"[\s　]", "", value_text.replace("，", ","))
+        core = re.sub(r"[\s　]", "", value_text.replace("，", ",")).rstrip("％%")  # e.g. "12.3％" vs "12.3%" in the quote (illustrative value)
         # the whole number must be a bounded token: "1" inside "1兆2,345億円" (illustrative value) is not the amount
         bounded = re.search(r"(?<![\d,.])" + re.escape(core) + r"(?![\d,]|\.\d|[兆億万])", evidence)
         if not bounded and re.search(r"\d [\d,]", evidence):
@@ -700,10 +713,7 @@ def _convert_only(fdef: FieldDef, item) -> Optional[tuple[float, dict]]:
 
 
 def extract_group_images(spec: CompanySpec, group: Group, fields: list[FieldDef], texts: list[str]) -> dict[str, FieldResult]:
-    garbled = [i for i, t in enumerate(texts) if is_garbled(t)]
     out = {f.name: FieldResult(f.name, reason="image fallback: no matching page") for f in fields}
-    if not garbled:
-        return out
     pages = list(dict(spec.image_page_hints).get(group.name, ()))
     if not pages:
         return {f.name: FieldResult(f.name, reason="image fallback: no page hint in companies.py") for f in fields}
