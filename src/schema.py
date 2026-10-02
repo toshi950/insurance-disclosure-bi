@@ -41,6 +41,7 @@ class ExtractionMethod(str, Enum):
     """
 
     DETERMINISTIC = "deterministic"  # pdfplumber text/table extraction
+    EDINET_XBRL = "edinet_xbrl"  # EDINET API v2 の構造化XBRL（個別・非連結）から直接取得
     LLM_VERIFIED = "llm_verified"  # deterministic result, LLM confirmed
     LLM_IMAGE_FALLBACK = "llm_image_fallback"  # page image + LLM read (see
     # ループ設計原則: only used when deterministic extraction fails, e.g.
