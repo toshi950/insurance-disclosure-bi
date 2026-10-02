@@ -32,6 +32,15 @@ class CompanySpec:
     # hand (2026-10-03). Page discovery by model-read headings proved unreliable, so
     # image extraction reads only these pages. See extraction/pdf_fields.py.
     image_page_hints: tuple[tuple[str, tuple[int, ...]], ...] = ()
+    # EDINET companies: the company's own disclosure booklets (統合報告書／ディスクロージャー誌) on its
+    # website, used only for fields EDINET XBRL cannot supply. (doc_key, url); the file is cached as
+    # data/raw/{doc_key}.pdf. Added 2026-10-03 (user's intent: read each company's own disclosure
+    # materials, not the EDINET-rendered PDF).
+    supplement_docs: tuple[tuple[str, str], ...] = ()
+    # (field, value in 百万円/%, note) — values a person confirmed against the source by eye; applied
+    # after extraction only where the field is still empty.
+    manual_values: tuple[tuple[str, float, str], ...] = ()
+    name_aliases: tuple[str, ...] = ()  # short forms used on booklet covers (identity check accepts them)
 
 
 COMPANIES: list[CompanySpec] = [
@@ -42,6 +51,12 @@ COMPANIES: list[CompanySpec] = [
         source_type=SourceType.EDINET,
         edinet_code="E31755",
         document_id="S100YD29",
+        name_aliases=("かんぽ生命",),
+        supplement_docs=(
+            ("kampo_material", "https://www.jp-life.japanpost.jp/ir/disclosure/assets/pdf/2026/disc26_material_a4.pdf"),
+            ("kampo_main", "https://www.jp-life.japanpost.jp/ir/disclosure/assets/pdf/2026/disc26_all_a4.pdf"),
+            ("kampo_solvency", "https://www.jp-life.japanpost.jp/ir/disclosure/assets/pdf/2026/disc26_ability_situation.pdf"),
+        ),
         notes="第20期、2026-06-18提出。持株会社を介さず直接上場。PDF直リンク検証済み"
         "（disclosure2dl.edinet-fsa.go.jp/searchdocument/pdf/{doc}.pdf）",
     ),
@@ -52,6 +67,9 @@ COMPANIES: list[CompanySpec] = [
         source_type=SourceType.EDINET,
         edinet_code="E03823",
         document_id="S100YLTM",
+        supplement_docs=(
+            ("tokio_perf", "https://www.tokiomarine-nichido.co.jp/company/pdf/TMNF_2026_d_05.pdf"),
+        ),
         notes="第83期、2026-06-26提出。非上場の完全子会社だが公募社債等の継続開示義務により単独提出。"
         "PDF直リンク検証済み",
     ),
@@ -106,7 +124,7 @@ COMPANIES: list[CompanySpec] = [
         source_type=SourceType.PDF,
         pdf_url="https://www.i-sedai.com/pdf/disclosure2025.pdf",
         site_root="https://www.i-sedai.com",
-        notes="2025年度版。実地検証済み。ソルベンシー・マージン比率1,054%〜1,303%を確認"
+        notes="2025年度版。実地検証済み。ソルベンシー・マージン比率が1,000%を超える水準であることを確認"
         "（生損保のESRとは別基準・別スケール）。ドメインはi-sedai.com"
         "（別会社の類似名「SBI日本少額短期保険」n-ssi.co.jpと混同しないこと）",
     ),

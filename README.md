@@ -45,6 +45,28 @@
 - [x] データソースの実地検証（EDINET個社データ・各社PDFの取得可否確認、2026-09-23完了）
   - EDINET個社データは表紙の会社名を機械的に検証する必要がある（検索結果の帰属表示が信頼できないケースがあった）
   - PDFの形式は会社ごとに大きく異なる：フォントエンコーディング崩れ（ページ画像化＋LLM読み取りで対応）、決算説明資料（要約）と正式なディスクロージャー誌（本体）の混同、ファイル分割方針の違い、サイトのSPA化による発見しにくさ、等
-- [ ] 統一スキーマ設計（業界共通コア＋業界別拡張の2層構造）
-- [ ] 抽出パイプライン実装（決定的処理＋LLM検証ループ、ページ画像化フォールバック含む）
+- [x] 統一スキーマ設計（業界共通コア＋業界別拡張の2層構造）
+- [x] 抽出パイプライン実装（EDINET API v2のXBRL＋各社ディスクロージャー資料のPDF。LLMの出力は原文との照合を通った値のみ採用、文字化けページは画像の複数回読取）
 - [ ] ダッシュボード実装（Streamlit）
+
+## 検証の方針と人の確認 (Verification and human review)
+
+🇯🇵
+- LLMが返した値は、引用が資料本文に存在し数値を含むことをコードで検算し、通らなければ採用しない。単位換算・合算・比率の算出もコード側で行う。
+- 本文が文字化けしているページは、ページ画像を複数回読み取り、一致した値のみ採用する。
+- 各値に、抽出方法・ページ・引用・単体/連結・期間の出所メモを付ける。抽出方法別の件数は `python src/pipeline.py` の出力で確認できる。
+- 人が関与する箇所は2つ：①文字化けページの位置指定（`image_page_hints`）、②目視確認済みの値の上書き（`manual_values`、現在は0件）。いずれも根拠を残す運用で、「全自動」とは主張しない。
+- 未開示・廃止の項目は推測で埋めず空欄にする。
+
+🇬🇧
+- A value returned by the LLM is accepted only if its quoted evidence is verifiable in the page text and contains the number; unit conversion, sums and ratios are computed in code, not by the model.
+- Pages with a garbled text layer are read from page images several times; only values on which the reads agree are kept.
+- Every value carries provenance (method, page, quote, entity basis, period). The count of values per extraction path is printed by `python src/pipeline.py`.
+- Humans are involved in two places: locating pages in garbled documents (`image_page_hints`) and overriding values they confirmed by eye (`manual_values`, currently empty). Both leave an audit trail; the project does not claim to be fully automatic.
+- Items that are undisclosed or discontinued are left blank, never guessed.
+
+## データの扱い (Data handling)
+
+🇯🇵 このリポジトリはコードとスキーマのみを公開し、抽出した数値データ・元のPDF・LLM応答のキャッシュは含めない（`data/` はgit管理外）。各自の環境で、各社が公開する資料を取得して生成する。資料の取得時はrobots.txtを確認する。
+
+🇬🇧 This repository publishes code and schema only. Extracted figures, source PDFs and LLM response caches are not included (`data/` is untracked); they are generated locally from each company's public disclosures, with robots.txt checked at fetch time.

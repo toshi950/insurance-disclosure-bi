@@ -46,6 +46,7 @@ class ExtractionMethod(str, Enum):
     LLM_IMAGE_FALLBACK = "llm_image_fallback"  # page image + LLM read (see
     # ループ設計原則: only used when deterministic extraction fails, e.g.
     # font-encoding corruption as seen with 損保ジャパン)
+    MANUAL_VERIFIED = "manual_verified"  # 人が原資料を目視確認して確定した値（根拠は Provenance.note）
     NOT_DISCLOSED = "not_disclosed"  # confirmed absent from the source
     NOT_ATTEMPTED = "not_attempted"  # extraction not yet run for this field
 
@@ -121,10 +122,8 @@ class LifeExtension(BaseModel):
     new_policies: Optional[float] = Field(None, description="新契約高（商品区分別、百万円）")
     annualized_premium: Optional[float] = Field(None, description="年換算保険料（百万円）")
     lapse_rate: Optional[float] = Field(None, description="解約失効率（%）")
-    embedded_value: Optional[float] = Field(
-        None,
-        description="実質純資産額 or EEV（百万円）。任意開示のため個社EDINETには基本出てこない",
-    )
+    # 実質純資産額・EV/EEVは持たない（2026-10-03決定）。実質純資産額は2026年3月31日施行の命令改正で規制上の
+    # 根拠（区分等を定める命令第3条第2〜5項）が廃止、EV/EEVは付録的開示で会社ごとに概念が異なり比較不能。
     mutual_company_fund: Optional[float] = Field(
         None, description="基金（百万円）。相互会社特有科目、株式会社形態の場合はNone"
     )
@@ -140,14 +139,8 @@ class NonLifeExtension(BaseModel):
     combined_ratio: Optional[float] = Field(
         None, description="コンバインドレシオ（%）＝損害率＋事業費率"
     )
-    catastrophe_reserve: Optional[float] = Field(
-        None,
-        description="異常危険準備金（百万円）。施行規則第70条、損保に固有の科目"
-        "（生保は同機能を危険準備金でカバーしており科目名自体が存在しない）",
-    )
-    catastrophe_reserve_by_line: Optional[dict[str, float]] = Field(
-        None, description="異常危険準備金の種目別内訳（開示があれば、例：三井住友海上）"
-    )
+    # 異常危険準備金は責任準備金の内訳であり、危険準備金と同様に分解せず policy_reserve_total（B/S計上額の全額）
+    # に含めて扱う（2026-10-03決定）。独立フィールドは持たない。
 
 
 class SSIExtension(BaseModel):

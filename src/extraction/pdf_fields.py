@@ -37,7 +37,7 @@ from typing import Optional
 import pdfplumber
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from companies import BY_ID, CompanySpec  # noqa: E402
+from companies import BY_ID, COMPANIES, CompanySpec  # noqa: E402
 from extraction.llm_verify import CHEAP_MODEL, STRONG_MODEL, _get_client  # noqa: E402
 from schema import (  # noqa: E402
     CompanyRecord,
@@ -128,6 +128,7 @@ class Group:
     fields: tuple[FieldDef, ...]
     prompt_note: str = ""
     max_pages: int = MAX_PAGES_PER_GROUP
+    must_any: tuple[str, ...] = ()  # in addition to must_all, a page must contain at least one of these
 
 
 ALL = (Industry.LIFE, Industry.NON_LIFE, Industry.SSI)
@@ -185,6 +186,16 @@ GROUPS: tuple[Group, ...] = (
         prompt_note="最新期末の比率。経済価値ベースと従来基準が併記されている場合は経済価値ベース（ESR）を優先し、note に「ESR」または「SMR」と書く。",
     ),
     Group(
+        "solvency_consol",
+        ALL,
+        must_all=("連結ソルベンシー・マージン比率",),
+        rank_by=("総額", "所要", "経済価値", "(Ａ)", "(Ｂ)", "(Ｃ)", "基準", "適格資本", "連結ベース"),
+        fields=(
+            FieldDef("solvency_ratio_consol", "percent", "**連結**ソルベンシー・マージン比率（％）。連結ベースの比率だけを返す（単体の比率は返さず、連結の比率が無ければ null）。経済価値ベース（ESR）が開示されていればそれ（note に ESR と明記）、従来基準のみなら SMR と明記"),
+        ),
+        prompt_note="連結ベースの表（「連結ソルベンシー・マージン比率」「連結ベース」）の最新期末の値。basis には必ず「連結」と書く。保険子会社・少額短期保険業者子会社の単体比率は対象外。",
+    ),
+    Group(
         "life_profit",
         LIFE,
         must_all=("基礎利益",),
@@ -227,22 +238,17 @@ GROUPS: tuple[Group, ...] = (
         ),
     ),
     Group(
-        "life_ev",
-        LIFE,
-        must_all=("実質純資産",),
-        rank_by=("エンベディッド", "EEV", "EV", "ソルベンシー", "含み損益"),
-        fields=(
-            FieldDef("embedded_value", "amount", "実質純資産額（またはEEV/EV。実質純資産額を優先）。note に実質純資産額かEEVかを明記"),
-        ),
-    ),
-    Group(
         "life_fund",
         LIFE,
-        must_all=("基金", "貸借対照表"),
-        rank_by=("基金償却積立金", "再評価積立金", "純資産の部", "負債の部"),
+        must_all=("基金",),
+        must_any=("貸借対照表", "基金等変動計算書"),
+        rank_by=("基金償却積立金", "再評価積立金", "純資産の部", "負債の部", "当期末残高", "基金等変動計算書"),
         fields=(
-            FieldDef("mutual_company_fund", "amount", "貸借対照表の純資産の部の「基金」（相互会社の基金）。「基金償却積立金」「基金等合計」「基金拠出金」は別科目なので対象外。「基金」という行が無ければ null"),
+            FieldDef("mutual_company_fund", "amount", "相互会社の「基金」の期末残高。次のどちらかから読む：(a) 貸借対照表の純資産の部の「基金」の行、(b) 基金等変動計算書の**「基金」列**の最新年度「当期末残高」（「基金」列は表の**最初の数値列**。基金が償却済みでその列が空欄の年度は、行の最初の数値が右隣の「基金償却積立金」列の値になっているので、取り違えないこと）。「基金償却積立金」「基金等合計」「基金拠出金」は別科目で対象外。基金の列/行が「－」「―」「–」なら残高なし（0）。基金という科目が表に存在しなければ null",
+                     evidence_regex=r"基金(?!償却|等|拠出|の|を)|当期末残高"),
         ),
+        prompt_note="株式会社形態の保険会社には基金は無い（null）。変動計算書は年度ごとに別表なので、最新年度の表の当期末残高を使う。",
+        max_pages=6,
     ),
     Group(
         "nonlife_core",
@@ -258,18 +264,9 @@ GROUPS: tuple[Group, ...] = (
         prompt_note="全種目合計の1行を使う（火災・自動車等の種目別の行ではない）。",
         max_pages=5,
     ),
-    Group(
-        "nonlife_catastrophe",
-        NONLIFE_LIKE,
-        must_all=("異常危険準備金",),
-        rank_by=("責任準備金", "種目", "期末残高", "当期末", "積立"),
-        fields=(
-            FieldDef("catastrophe_reserve", "amount", "異常危険準備金の期末残高（全種目合計の1行）。繰入額・取崩額ではなく残高"),
-        ),
-    ),
 )
 
-_DASH_IS_ZERO = {"assets_bankrupt_claims", "assets_doubtful_claims", "assets_overdue_3m", "assets_restructured", "assets_normal_claims"}
+_DASH_IS_ZERO = {"mutual_company_fund", "assets_bankrupt_claims", "assets_doubtful_claims", "assets_overdue_3m", "assets_restructured", "assets_normal_claims"}
 _UNIT_TO_MILLION = {"百万円": 1.0, "千円": 0.001, "円": 1e-6, "億円": 100.0, "兆円": 1e6, "万円": 0.01}
 
 
@@ -337,6 +334,8 @@ def candidate_pages(texts: list[str], group: Group, limit: Optional[int] = None)
             continue
         sq = _squash(t)
         if not all(k in sq for k in group.must_all):
+            continue
+        if group.must_any and not any(k in sq for k in group.must_any):
             continue
         figure_lines = _figure_lines(t, group.must_all + group.rank_by)
         density = len(_FIGURE_RE.findall(t)) // 10  # data-dense pages beat index pages
@@ -423,7 +422,7 @@ _KANJI_AMOUNT = re.compile(r"^(?:(?P<cho>[\d,]+)兆)?(?:(?P<oku>[\d,]+)億)?(?:(
 
 
 def _parse_kanji_million(value_text: str) -> Optional[float]:
-    """'2兆3,115億円' -> 百万円。単位を含む表記は unit 欄に頼らずここで換算する。"""
+    """'2兆3,456億円' -> 百万円。単位を含む表記は unit 欄に頼らずここで換算する。"""
     t = re.sub(r"[\s　]", "", value_text)
     if not re.search(r"[兆億万]", t):
         return None
@@ -504,7 +503,7 @@ def ground_and_convert(fdef: FieldDef, item, texts: list[str], pages: list[int])
 
     suffixed = re.fullmatch(r"(.+?)(百万円|千円|万円|円)", re.sub(r"[\s　]", "", value_text))
     if suffixed and fdef.kind == "amount" and not re.search(r"[兆億]", value_text):
-        value_text, unit = suffixed.group(1), suffixed.group(2)  # "1,379,292千円"
+        value_text, unit = suffixed.group(1), suffixed.group(2)  # e.g. "1,234,567千円"
     kanji = _parse_kanji_million(value_text) if fdef.kind == "amount" else None
     printed = _parse_printed(value_text) if kanji is None else None
     if printed is None and kanji is None and fdef.name in _DASH_IS_ZERO and value_text.strip() in ("－", "-", "―", "ー", "−", "–", "—", "─"):
@@ -517,7 +516,7 @@ def ground_and_convert(fdef: FieldDef, item, texts: list[str], pages: list[int])
     # grounding: the evidence must be quotable from a page that was sent — either
     # verbatim (whitespace-insensitive) or as an ordered subsequence of tokens on a
     # single line (the model often drops the middle of a multi-year row, e.g.
-    # "個人保険 109,021,881 △4.3" out of "個人保険 113,890,167 △5.0 109,021,881 △4.3").
+    # "個人保険 1,200,000 △4.3" out of "個人保険 1,300,000 △5.0 1,200,000 △4.3").
     # Either way the reported number must sit in the quoted text.
     ev_sq = _squash(evidence)
     hit_page = next((i for i in pages if ev_sq and ev_sq in _squash(texts[i])), None)
@@ -538,7 +537,7 @@ def ground_and_convert(fdef: FieldDef, item, texts: list[str], pages: list[int])
         return res
     if kanji is None and printed != 0.0:
         core = re.sub(r"[\s　]", "", value_text.replace("，", ","))
-        # the whole number must be a bounded token: "1" inside "1兆3,390億円" is not the amount
+        # the whole number must be a bounded token: "1" inside "1兆2,345億円" is not the amount
         bounded = re.search(r"(?<![\d,.])" + re.escape(core) + r"(?![\d,]|\.\d|[兆億万])", evidence)
         if not bounded and re.search(r"\d [\d,]", evidence):
             # digits printed with letter-spacing ("2 6 8 ,7 7 9"): token boundaries are lost, so
@@ -565,14 +564,15 @@ def ground_and_convert(fdef: FieldDef, item, texts: list[str], pages: list[int])
     return res
 
 
-def extract_group(spec: CompanySpec, group: Group, texts: Optional[list[str]] = None,
+def extract_group(spec: CompanySpec, group: Group, texts: Optional[list[str]] = None, doc_key: Optional[str] = None,
                   use_cache: bool = True) -> dict[str, FieldResult]:
-    texts = texts if texts is not None else load_page_texts(spec.company_id)
+    doc = doc_key or spec.company_id
+    texts = texts if texts is not None else load_page_texts(doc)
     pages = candidate_pages(texts, group)
     if not pages:
         return {f.name: FieldResult(f.name, reason="no candidate page (must_all keywords absent)") for f in group.fields}
 
-    cache_file = LLM_CACHE_DIR / f"{spec.company_id}__{group.name}.json"
+    cache_file = LLM_CACHE_DIR / f"{doc}__{group.name}.json"
     prompt = _build_prompt(spec, group, texts, pages)
     cached = json.loads(cache_file.read_text(encoding="utf-8")) if use_cache and cache_file.exists() else None
     prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16]
@@ -776,6 +776,15 @@ def _solvency_basis(r: FieldResult, spec: CompanySpec) -> Optional[SolvencyBasis
     return None
 
 
+def prefer_consolidated_solvency(results: dict[str, FieldResult]) -> None:
+    """ソルベンシー比率は連結ベースで取る方針（2026-10-03決定）。連結の比率が根拠付きで取れていれば
+    それを solvency_ratio とし、無ければ（単体のみ開示等）group "solvency" の結果をそのまま使う。"""
+    c = results.pop("solvency_ratio_consol", None)
+    if c is not None and c.ok and c.basis == "連結":
+        c.name = "solvency_ratio"
+        results["solvency_ratio"] = c
+
+
 def derive_substandard(results: dict[str, FieldResult]) -> None:
     """要管理債権 = 三月以上延滞債権 + 貸付条件緩和債権（保険業法上の定義）。両方が
     根拠付きで取れた場合のみ、コード側で合算する（モデルに計算させない）。"""
@@ -827,7 +836,7 @@ def _fiscal_year(period: Optional[str]) -> Optional[int]:
 
 def enforce_latest_period(results: dict[str, FieldResult]) -> None:
     """Reject values that belong to an earlier fiscal year than the document's
-    own latest (modal) one. Seen in practice: 明治安田's 実質純資産額 table prints
+    own latest (modal) one. Seen in practice: 明治安田's (now dropped) 実質純資産額 table printed
     a 2024年度末 figure while the 2025年度末 column reads 廃止; the earlier
     year's number must not be reported as current."""
     years = [y for y in (_fiscal_year(r.period) for r in results.values() if r.ok) if y is not None]
@@ -908,9 +917,107 @@ def run_company(company_id: str, record: Optional[CompanyRecord] = None) -> tupl
         derive_substandard(all_results)
     if "pif_individual" in all_results:
         derive_life_totals(all_results)
+    prefer_consolidated_solvency(all_results)
     enforce_latest_period(all_results)
     apply_to_record(record, spec, all_results)
     return record, all_results
+
+
+# ---------------------------------------------------------------------------
+# Supplement documents for EDINET companies
+# ---------------------------------------------------------------------------
+
+# group -> the schema fields it can fill (helper fields fold into these)
+_GROUP_TARGETS = {
+    "solvency_consol": ("solvency_ratio",),
+    "loans": ("assets_bankrupt_claims", "assets_doubtful_claims", "assets_substandard_claims", "assets_normal_claims"),
+    "life_contracts": ("policies_in_force", "new_policies"),
+}
+
+
+def _targets(group: Group) -> tuple[str, ...]:
+    return _GROUP_TARGETS.get(group.name, tuple(f.name for f in group.fields))
+
+
+def _is_empty(record: CompanyRecord, name: str) -> bool:
+    if hasattr(record.common, name):
+        return getattr(record.common, name) is None
+    ext = record.life_ext or record.non_life_ext or record.ssi_ext
+    return ext is None or getattr(ext, name, None) is None
+
+
+def fetch_supplement(doc_key: str, url: str, company_name: str) -> Optional[Path]:
+    """Download one of the company's own disclosure PDFs (robots.txt honoured) and confirm it is
+    really that company's document from its own text/metadata before anything is read from it."""
+    import requests
+
+    from robots_check import USER_AGENT, is_fetch_allowed
+
+    dest = RAW_DIR / f"{doc_key}.pdf"
+    if not dest.exists():
+        if not is_fetch_allowed(url):
+            print(f"  [skip] robots.txt disallows {url}")
+            return None
+        resp = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=180)
+        resp.raise_for_status()
+        if not resp.content.startswith(b"%PDF"):
+            print(f"  [skip] {url} is not a PDF")
+            return None
+        RAW_DIR.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(resp.content)
+    from extraction.pdf_source import _normalize
+
+    spec = next((c for c in COMPANIES if c.company_name == company_name), None)
+    targets = [_normalize(company_name)] + [_normalize(a) for a in (spec.name_aliases if spec else ())]
+    texts = load_page_texts(doc_key)
+    meta = ""
+    with pdfplumber.open(dest) as pdf:
+        meta = " ".join(str(v) for v in (pdf.metadata or {}).values())
+    if not any(t in _normalize(x) for t in targets for x in [*texts[:15], meta]):
+        print(f"  [skip] {doc_key}: company name not found in first pages/metadata (identity unverified)")
+        return None
+    return dest
+
+
+def run_supplement(company_id: str, record: CompanyRecord) -> dict[str, FieldResult]:
+    """Fill gaps in an EDINET-sourced `record` from the company's own disclosure booklets.
+    Values already present (EDINET) are never overwritten, except the solvency ratio, where the
+    booklet's official figure replaces EDINET's provisional MD&A figure."""
+    spec = BY_ID[company_id]
+    all_results: dict[str, FieldResult] = {}
+    for doc_key, url in spec.supplement_docs:
+        if fetch_supplement(doc_key, url, spec.company_name) is None:
+            continue
+        texts = load_page_texts(doc_key)
+        results: dict[str, FieldResult] = {}
+        for g in groups_for(spec):
+            if g.name == "life_fund":
+                continue  # 基金は相互会社特有。株式会社（かんぽ生命）には該当しない
+            wanted = [n for n in _targets(g)
+                      if (_is_empty(record, n) or n == "solvency_ratio") and not (all_results.get(n) and all_results[n].ok)]
+            if wanted:
+                results.update(extract_group(spec, g, texts, doc_key=doc_key))
+        if "assets_overdue_3m" in results:
+            derive_substandard(results)
+        if "pif_individual" in results:
+            derive_life_totals(results)
+        prefer_consolidated_solvency(results)
+        enforce_latest_period(results)
+        for name, r in results.items():
+            if r.ok and not (all_results.get(name) and all_results[name].ok):
+                r.note = f"{r.note or ''} [補完元: {doc_key}.pdf]".strip()
+                all_results[name] = r
+            else:
+                all_results.setdefault(name, r)
+    apply_to_record(record, spec, {n: r for n, r in all_results.items() if r.ok and _is_empty(record, n)})
+    for n, r in all_results.items():
+        if n == "solvency_ratio" and r.ok:  # official booklet figure supersedes EDINET's provisional one
+            record.common.solvency_ratio = r.value
+            record.common.solvency_basis = _solvency_basis(r, spec)
+            record.field_provenance[n] = Provenance(
+                method=r.method, source_page=r.page, evidence=r.evidence, basis=r.basis, period=r.period,
+                note=f"{r.note or ''} [model={r.model}; 引用はページ本文と照合済み]".strip())
+    return all_results
 
 
 if __name__ == "__main__":

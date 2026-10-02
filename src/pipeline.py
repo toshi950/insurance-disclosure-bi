@@ -33,6 +33,14 @@ def _flat(record: CompanyRecord) -> dict:
     return out
 
 
+def apply_manual_values(record: CompanyRecord, spec) -> None:
+    for name, value, note in spec.manual_values:
+        if pdf_fields._is_empty(record, name):
+            target = record.common if hasattr(record.common, name) else record.extension()
+            setattr(target, name, value)
+            record.field_provenance[name] = Provenance(method=ExtractionMethod.MANUAL_VERIFIED, note=note)
+
+
 def derive_combined_ratio(record: CompanyRecord) -> None:
     ext = record.non_life_ext or record.ssi_ext
     if ext is None:
@@ -67,6 +75,20 @@ def sanity_checks(record: CompanyRecord) -> list[str]:
     return problems
 
 
+def method_counts(items: list[dict]) -> dict[str, int]:
+    """How many populated numeric fields came from each extraction path (provenance method).
+    Published in the README as an honesty measure: it shows how much is machine-extracted vs
+    human-confirmed."""
+    counts: dict[str, int] = {}
+    for item in items:
+        rec = CompanyRecord.model_validate(item["record"])
+        for name in _flat(rec):
+            m = rec.field_provenance.get(name)
+            key = m.method.value if m else "derived"
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
 def build_all() -> list[dict]:
     results = []
     for spec in COMPANIES:
@@ -75,12 +97,15 @@ def build_all() -> list[dict]:
             record = ex.record
             for name in _flat(record):
                 record.field_provenance.setdefault(name, Provenance(method=ExtractionMethod.EDINET_XBRL))
-            # ESR (and anything else EDINET text lacks) is filled from the company's PDF if one is
-            # configured; the EDINET companies currently have none, so they keep the gaps listed.
-            gaps = ex.missing
+            # What EDINET XBRL cannot supply is read from the company's own disclosure booklets.
+            supp = pdf_fields.run_supplement(spec.company_id, record)
+            gaps = [n for n in ex.missing if pdf_fields._is_empty(record, n)] + [
+                n for n, r in supp.items() if not r.ok and pdf_fields._is_empty(record, n) and n not in ex.missing]
         else:
             record, pdf_results = pdf_fields.run_company(spec.company_id)
             gaps = [n for n, r in pdf_results.items() if not r.ok]
+        apply_manual_values(record, spec)
+        gaps = [n for n in gaps if pdf_fields._is_empty(record, n)]
         derive_combined_ratio(record)
         results.append({
             "record": record.model_dump(mode="json", exclude_none=True),
@@ -95,6 +120,7 @@ if __name__ == "__main__":
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"wrote {OUT.relative_to(OUT.parent.parent.parent)}")
+    print("  extraction paths:", method_counts(data))
     for item in data:
         rec = item["record"]
         n = len(_flat(CompanyRecord.model_validate(rec)))

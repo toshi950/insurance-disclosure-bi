@@ -398,8 +398,6 @@ def extract(company_id: str, zip_path: Optional[Path] = None) -> EdinetExtractio
             ext.combined_ratio = round((loss + expense) * 100, 2)
         else:
             missing.append("combined_ratio")
-        # 異常危険準備金：個別XBRLにタグ・注記なし（「その他の責任準備金」に含まれ内訳非開示）
-        missing.append("catastrophe_reserve")
     elif spec.industry is Industry.LIFE:
         ext = record.extension()
         base = kpi_value("CorePofitSummaryOfBusinessResults")  # 基礎利益（タクソノミ上の綴りは CorePofit）
@@ -407,8 +405,8 @@ def extract(company_id: str, zip_path: Optional[Path] = None) -> EdinetExtractio
             ext.base_profit = base / YEN_PER_MILLION
         else:
             missing.append("base_profit")
-        # 保有契約高・新契約高・年換算保険料・解約失効率・EV：個別XBRLのタグに無い（PDF側で補完）
-        missing += ["policies_in_force", "new_policies", "annualized_premium", "lapse_rate", "embedded_value"]
+        # 保有契約高・新契約高・年換算保険料・解約失効率：個別XBRLのタグに無い（PDF側で補完）
+        missing += ["policies_in_force", "new_policies", "annualized_premium", "lapse_rate"]
 
     return EdinetExtraction(record, identity, True, missing)
 
