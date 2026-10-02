@@ -55,20 +55,26 @@
 - LLMが返した値は、引用が資料本文に存在し数値を含むことをコードで検算し、通らなければ採用しない。単位換算・合算・比率の算出もコード側で行う。
 - 本文が文字化けしているページは、ページ画像を複数回読み取り、一致した値のみ採用する。
 - 各値に、抽出方法・ページ・引用・単体/連結・期間の出所メモを付ける。抽出方法別の件数は `python src/pipeline.py` の出力で確認できる。
-- 人が関与する箇所は2つ：①文字化けページの位置指定（`image_page_hints`）、②目視確認済みの値の上書き（`manual_values`、現在は0件）。いずれも根拠を残す運用で、「全自動」とは主張しない。
+- 人が関与する箇所は2つ：①文字化けページの位置指定（`image_page_hints`）、②目視確認の結果の記録と値の修正（`data/overrides.csv`）。修正は生成物とは別のファイルに理由・日付つきで残り、再実行しても消えない。「全自動」とは主張しない。
 - 未開示・廃止の項目は推測で埋めず空欄にする。制度上存在しない項目（例：少額短期保険の債権区分）は「該当なし」として区別する。
-- 人が見たほうがよい項目（未取得、情報源どうしの不一致、画像読取、連結値の採用、緩い照合で通った引用）は、`pipeline.py` が要確認レポート（ページ画像付きHTML）を `data/review/` に出力する。確認結果は台帳に記録でき、値が変わるまで次回から非表示になる（`python src/review.py confirm ...`）。
+- 人が見たほうがよい項目（未取得、情報源どうしの不一致、画像読取、連結値の採用、緩い照合で通った引用）は、`pipeline.py` が要確認レポート（ページ画像付きHTML）を `data/review/` に出力する。確認結果は `data/overrides.csv` に記録でき（コマンドでもCSVの直接編集でも可）、値が変わるまで次回から非表示になる。
 
 🇬🇧
 - A value returned by the LLM is accepted only if its quoted evidence is verifiable in the page text and contains the number; unit conversion, sums and ratios are computed in code, not by the model.
 - Pages with a garbled text layer are read from page images several times; only values on which the reads agree are kept.
 - Every value carries provenance (method, page, quote, entity basis, period). The count of values per extraction path is printed by `python src/pipeline.py`.
-- Humans are involved in two places: locating pages in garbled documents (`image_page_hints`) and overriding values they confirmed by eye (`manual_values`, currently empty). Both leave an audit trail; the project does not claim to be fully automatic.
+- Humans are involved in two places: locating pages in garbled documents (`image_page_hints`) and recording review decisions or corrected values (`data/overrides.csv`). Corrections live in a separate file with reason and date and survive re-runs; the project does not claim to be fully automatic.
 - Items that are undisclosed or discontinued are left blank, never guessed; items that cannot exist by regulation are marked not-applicable.
-- `pipeline.py` writes an exception report (HTML with page images) to `data/review/` for items a person should check: gaps, disagreeing sources, image-read values, consolidated substitutes and quotes that passed only the loose check. Decisions are kept in a ledger and hide an item until its value changes.
+- `pipeline.py` writes an exception report (HTML with page images) to `data/review/` for items a person should check: gaps, disagreeing sources, image-read values, consolidated substitutes and quotes that passed only the loose check. Decisions are kept in `data/overrides.csv` and hide an item until its value changes.
 
 ## データの扱い (Data handling)
 
 🇯🇵 このリポジトリはコードとスキーマのみを公開し、抽出した数値データ・元のPDF・LLM応答のキャッシュは含めない（`data/` はgit管理外）。各自の環境で、各社が公開する資料を取得して生成する。資料の取得時はrobots.txtを確認する。コード内のコメント等に現れる数値例は、説明用の架空の値であり、実在の会社のデータではない。
 
 🇬🇧 This repository publishes code and schema only. Extracted figures, source PDFs and LLM response caches are not included (`data/` is untracked); they are generated locally from each company's public disclosures, with robots.txt checked at fetch time. Figures that appear in code comments are illustrative, made-up examples, not real company data.
+
+## 実行の流れ (How to run)
+
+🇯🇵 `python src/pipeline.py` の1コマンドで、抽出 → `data/output/extracted.csv`（機械の結果）→ `data/overrides.csv`（人の確認・修正）との合成 → `data/output/final.csv`（BIが読む最終データ）・`final_wide.csv`（Excelで一覧する会社×項目の表）→ 要確認レポートまで生成する。レポートを見て修正があれば `data/overrides.csv` に1行足して同じコマンドを再実行する（LLMの応答はキャッシュされるため再実行は速い）。`overrides.csv` の列：`company_id, field, decision(ok|no_disclosure|needs_fix|override), value, expected_extracted_value, reason, date`。`expected_extracted_value` は確認時の抽出値で、後で抽出値が変わると「古い記録」として警告する。
+
+🇬🇧 `python src/pipeline.py` runs everything: extraction → `data/output/extracted.csv` (machine result) → merge with `data/overrides.csv` (human decisions and corrections) → `data/output/final.csv` (what the BI layer reads) and `final_wide.csv` (a company-by-field grid for Excel) → the exception report. To correct something, add a row to `data/overrides.csv` and re-run; LLM answers are cached, so re-runs are quick. `expected_extracted_value` records what the person looked at, so a decision is reported as stale if the extraction later changes.

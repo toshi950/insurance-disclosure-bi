@@ -11,11 +11,13 @@ An item is flagged when one of these holds (chosen to keep the report short):
   consolidated_substitute the value is consolidated, not the individual-entity figure
   loose_grounding        the quoted evidence only passed the loose, layout-tolerant check
 
-Decisions already made by a person are kept in data/review/ledger.json and suppress an item until
-its value changes:
+A person's decisions live in data/overrides.csv (see dataset.py). An item with a current ok /
+no_disclosure / override decision is hidden; a decision whose extracted value has since changed is
+shown again as stale; needs_fix stays visible.
 
-    python src/review.py                                 # regenerate the report
-    python src/review.py confirm <company_id> <field> ok|no_disclosure|needs_fix [note ...]
+    python src/review.py                                      # regenerate the report
+    python src/review.py confirm <company_id> <field> ok|no_disclosure|needs_fix [reason ...]
+    python src/review.py override <company_id> <field> <value> [reason ...]
 """
 
 from __future__ import annotations
@@ -33,7 +35,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 ROOT = Path(__file__).resolve().parent.parent
 REVIEW_DIR = ROOT / "data" / "review"
-LEDGER = REVIEW_DIR / "ledger.json"
 RECORDS = ROOT / "data" / "processed" / "records.json"
 RAW_DIR = ROOT / "data" / "raw"
 MAX_PAGES_PER_ITEM = 2
@@ -46,8 +47,11 @@ FLAG_LABELS = {
     "image_majority": "画像読取：複数回の読取のうち1回が不一致",
     "consolidated_substitute": "連結値を採用（単体ではない）",
     "loose_grounding": "引用の照合が緩い基準で通過（段組・複数行）",
+    "stale_decision": "人の記録は古い（その後、抽出値が変わった）",
+    "needs_fix": "要修正（記録済み）",
 }
-DECISIONS = {"ok": "確認済み・値は正しい", "no_disclosure": "確認済み・資料に値が無い", "needs_fix": "要修正"}
+DECISIONS = {"ok": "確認済み・値は正しい", "no_disclosure": "確認済み・資料に値が無い", "needs_fix": "要修正",
+             "override": "人が修正した値を採用"}
 
 
 def _flat(record: dict) -> dict:
@@ -57,21 +61,11 @@ def _flat(record: dict) -> dict:
     return out
 
 
-def load_ledger() -> dict:
-    if LEDGER.exists():
-        return json.loads(LEDGER.read_text(encoding="utf-8"))
-    return {}
+def collect_items(data: list[dict], overrides: Optional[dict] = None) -> tuple[list[dict], list[dict]]:
+    """Returns (items to review, items already decided by a person and unchanged)."""
+    import dataset
 
-
-def _same(a, b) -> bool:
-    if a is None or b is None:
-        return a is None and b is None
-    return abs(a - b) <= max(1e-9, 1e-6 * abs(a))
-
-
-def collect_items(data: list[dict], ledger: Optional[dict] = None) -> tuple[list[dict], list[dict]]:
-    """Returns (items to review, items already confirmed in the ledger and unchanged)."""
-    ledger = load_ledger() if ledger is None else ledger
+    overrides = dataset.load_overrides() if overrides is None else overrides
     items, confirmed = [], []
     for entry in data:
         rec = entry["record"]
@@ -89,12 +83,17 @@ def collect_items(data: list[dict], ledger: Optional[dict] = None) -> tuple[list
                               "flags": sorted(set(flags)), "reason": "", "prov": p})
     pending = []
     for it in items:
-        led = ledger.get(f"{it['company_id']}:{it['field']}")
-        if led and _same(led.get("value"), it["value"]):
-            it["decision"] = led
+        ov = overrides.get((it["company_id"], it["field"]))
+        state = dataset.override_state(ov, it["value"])
+        if state == "current" and ov["decision"] in ("ok", "no_disclosure", "override"):
+            it["decision"] = ov
             confirmed.append(it)
-        else:
-            pending.append(it)
+            continue
+        if state == "stale":
+            it["flags"].append("stale_decision")
+        elif state == "current" and ov["decision"] == "needs_fix":
+            it["flags"].append("needs_fix")
+        pending.append(it)
     return pending, confirmed
 
 
@@ -164,10 +163,10 @@ def _section(item: dict) -> str:
         if b64:
             figs.append(f'<figure><figcaption><b>{html.escape(doc)}.pdf　PDF {idx + 1} ページ目</b>（0始まり {idx}）— {html.escape(cap)}</figcaption>'
                         f'<img src="data:image/jpeg;base64,{b64}" loading="lazy"></figure>')
-    cmd = f"python src/review.py confirm {item['company_id']} {item['field']} ok|no_disclosure|needs_fix \"メモ\""
+    cmd = f"python src/review.py confirm {item['company_id']} {item['field']} ok|no_disclosure|needs_fix \"理由\""
     return (f'<section><h2>{html.escape(item["company_name"])}　／　<code>{html.escape(item["field"])}</code></h2>{chips}'
             f'<table class="info">{"".join(rows)}</table>{"".join(figs)}'
-            f'<p class="verdict">目視の結果を台帳に記録：<code>{html.escape(cmd)}</code></p></section>')
+            f'<p class="verdict">目視の結果を記録（data/overrides.csv に1行追加）：<code>{html.escape(cmd)}</code></p></section>')
 
 
 def generate(data: list[dict]) -> tuple[Path, dict]:
@@ -183,7 +182,7 @@ def generate(data: list[dict]) -> tuple[Path, dict]:
     done = "".join(
         f'<tr><td>{html.escape(i["company_name"])}</td><td><code>{html.escape(i["field"])}</code></td>'
         f'<td>{html.escape(DECISIONS.get(i["decision"]["decision"], i["decision"]["decision"]))}（{html.escape(i["decision"].get("date", ""))}）'
-        f' {html.escape(i["decision"].get("note", ""))}</td></tr>' for i in confirmed)
+        f' {html.escape(i["decision"].get("reason", ""))}</td></tr>' for i in confirmed)
     doc = f"""<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>要確認項目レポート</title>
 <style>
@@ -196,34 +195,36 @@ img{{max-width:100%;height:auto;border:1px solid #bbb}} figcaption{{font-size:.8
 .verdict{{background:#fffbe6;border:1px dashed #cb0;padding:8px;font-size:.85rem}} code{{font-size:.8rem}}
 </style></head><body>
 <h1>要確認項目レポート（{date.today().isoformat()}生成）</h1>
-<p>機械的に判定した「人が見たほうがよい項目」です（{len(pending)}件）。値の正しさを保証するものではなく、<b>目視の確認先</b>を示します。確認した結果は台帳に記録すると、値が変わるまで次回から出なくなります。このファイルはページ画像を含むため、公開リポジトリには置きません（<code>data/</code>はgit管理外）。</p>
+<p>機械的に判定した「人が見たほうがよい項目」です（{len(pending)}件）。値の正しさを保証するものではなく、<b>目視の確認先</b>を示します。確認した結果は <code>data/overrides.csv</code> に記録すると（コマンドでも、CSVを直接編集しても可）、値が変わるまで次回から出なくなります。修正が必要なら <code>override</code> の行を足して再実行します。このファイルはページ画像を含むため、公開リポジトリには置きません（<code>data/</code>はgit管理外）。</p>
 <h2>一覧</h2><table><tr><th>会社</th><th>項目</th><th>理由</th></tr>{summary or '<tr><td colspan="3">要確認項目はありません</td></tr>'}</table>
 {"".join(_section(i) for i in pending)}
-<h2>確認済み（台帳、値が変わるまで非表示）</h2><table><tr><th>会社</th><th>項目</th><th>判定</th></tr>{done or '<tr><td colspan="3">なし</td></tr>'}</table>
+<h2>確認済み（data/overrides.csv、値が変わるまで非表示）</h2><table><tr><th>会社</th><th>項目</th><th>判定</th></tr>{done or '<tr><td colspan="3">なし</td></tr>'}</table>
 </body></html>"""
     path = REVIEW_DIR / "review.html"
     path.write_text(doc, encoding="utf-8")
     return path, counts
 
 
-def confirm(company_id: str, field: str, decision: str, note: str) -> None:
-    if decision not in DECISIONS:
-        raise SystemExit(f"decision must be one of {sorted(DECISIONS)}")
+def _current_value(company_id: str, field: str) -> Optional[float]:
     data = json.loads(RECORDS.read_text(encoding="utf-8"))
     entry = next((e for e in data if e["record"]["company_id"] == company_id), None)
     if entry is None:
         raise SystemExit(f"unknown company_id {company_id!r}")
-    value = _flat(entry["record"]).get(field)
-    ledger = load_ledger()
-    ledger[f"{company_id}:{field}"] = {"decision": decision, "value": value, "note": note, "date": date.today().isoformat()}
-    REVIEW_DIR.mkdir(parents=True, exist_ok=True)
-    LEDGER.write_text(json.dumps(ledger, ensure_ascii=False, indent=1), encoding="utf-8")
+    return _flat(entry["record"]).get(field)
+
+
+def confirm(company_id: str, field: str, decision: str, reason: str, value: Optional[float] = None) -> None:
+    import dataset
+
+    dataset.append_override(company_id, field, decision, value, _current_value(company_id, field), reason)
     print(f"recorded {company_id}:{field} -> {decision}")
 
 
 if __name__ == "__main__":
     if len(sys.argv) >= 5 and sys.argv[1] == "confirm":
         confirm(sys.argv[2], sys.argv[3], sys.argv[4], " ".join(sys.argv[5:]))
+    elif len(sys.argv) >= 5 and sys.argv[1] == "override":
+        confirm(sys.argv[2], sys.argv[3], "override", " ".join(sys.argv[5:]), value=float(sys.argv[4]))
     data = json.loads(RECORDS.read_text(encoding="utf-8"))
     path, counts = generate(data)
     print(f"review report: {path.name} {counts}")

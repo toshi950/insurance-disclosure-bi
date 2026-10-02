@@ -7,3 +7,5 @@ __pycache__/
 .venv/
 data/processed/
 data/review/
+data/output/
+data/overrides.csv

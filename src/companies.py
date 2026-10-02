@@ -37,9 +37,6 @@ class CompanySpec:
     # data/raw/{doc_key}.pdf. Added 2026-10-03 (user's intent: read each company's own disclosure
     # materials, not the EDINET-rendered PDF).
     supplement_docs: tuple[tuple[str, str], ...] = ()
-    # (field, value in 百万円/%, note) — values a person confirmed against the source by eye; applied
-    # after extraction only where the field is still empty.
-    manual_values: tuple[tuple[str, float, str], ...] = ()
     # (field, note) — fields that cannot exist for this entity by regulation (not "failed to extract").
     not_applicable: tuple[tuple[str, str], ...] = ()
     # (field, note) — fields not yet disclosed by the entity (expected; revisit when published).
@@ -55,6 +52,7 @@ COMPANIES: list[CompanySpec] = [
         source_type=SourceType.EDINET,
         edinet_code="E31755",
         document_id="S100YD29",
+        not_applicable=(("mutual_company_fund", "株式会社形態のため、相互会社特有の基金は存在しない"),),
         name_aliases=("かんぽ生命",),
         supplement_docs=(
             ("kampo_material", "https://www.jp-life.japanpost.jp/ir/disclosure/assets/pdf/2026/disc26_material_a4.pdf"),

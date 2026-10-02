@@ -33,14 +33,6 @@ def _flat(record: CompanyRecord) -> dict:
     return out
 
 
-def apply_manual_values(record: CompanyRecord, spec) -> None:
-    for name, value, note in spec.manual_values:
-        if pdf_fields._is_empty(record, name):
-            target = record.common if hasattr(record.common, name) else record.extension()
-            setattr(target, name, value)
-            record.field_provenance[name] = Provenance(method=ExtractionMethod.MANUAL_VERIFIED, note=note)
-
-
 def apply_not_applicable(record: CompanyRecord, spec) -> None:
     for name, note in spec.not_applicable:
         record.field_provenance[name] = Provenance(method=ExtractionMethod.NOT_APPLICABLE, note=note)
@@ -117,7 +109,6 @@ def build_all() -> list[dict]:
             record, pdf_results = pdf_fields.run_company(spec.company_id)
             gaps = [n for n, r in pdf_results.items() if not r.ok]
             reasons = {n: pdf_results[n].reason for n in gaps}
-        apply_manual_values(record, spec)
         apply_not_applicable(record, spec)
         apply_not_yet_disclosed(record, spec)
         expected = {n for n, _ in spec.not_applicable} | {n for n, _ in spec.not_yet_disclosed}
@@ -132,7 +123,12 @@ def build_all() -> list[dict]:
     return results
 
 
-if __name__ == "__main__":
+def run() -> None:
+    """One command: extract -> records.json -> CSVs (extracted / final / wide) -> review report.
+    Re-running is cheap (LLM answers are cached) and keeps human decisions in data/overrides.csv."""
+    import dataset
+    from review import generate
+
     data = build_all()
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -142,7 +138,18 @@ if __name__ == "__main__":
         rec = item["record"]
         n = len(_flat(CompanyRecord.model_validate(rec)))
         print(f"  {rec['company_id']:<22} {n:>2} numeric fields | gaps {len(item['gaps']):>2} | sanity: {item['sanity_problems'] or 'ok'}")
-    from review import generate  # local import: review needs the PDFs under data/raw
+    rows, warnings = dataset.build_rows(data)
+    paths = dataset.write_csvs(rows)
+    for w in warnings:
+        print("  WARNING:", w)
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    print("  csv:", ", ".join(f"{k}={p.relative_to(OUT.parent.parent.parent)}" for k, p in paths.items()))
+    print("  status counts:", counts)
+    path, flag_counts = generate(data)
+    print(f"  review report: {path.name} ({flag_counts})")
 
-    path, counts = generate(data)
-    print(f"  review report: {path.name} ({counts})")
+
+if __name__ == "__main__":
+    run()
