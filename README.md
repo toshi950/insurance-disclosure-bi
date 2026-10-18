@@ -82,3 +82,7 @@
 🇯🇵 ダッシュボードは `streamlit run src/dashboard.py`（先に `python src/pipeline.py` を実行）。業態・会社で絞り込み、指標ごとの棒グラフ、会社×指標の比較表、各値の出所（資料・ページ）と確認状況を見られる。ソルベンシー比率は算出方式（ESR／SMR）ごとに分けて表示し、値が無い項目は「対象外／開示前／未取得」と理由を区別する。
 
 🇬🇧 Run the dashboard with `streamlit run src/dashboard.py` after `python src/pipeline.py`. It offers industry/company filters, a bar chart per metric, a company-by-metric table and the source (document, page) and review status of every value. Solvency ratios are split by regulatory scale (ESR vs SMR), and missing values are labelled not applicable / not yet disclosed / not found.
+
+🇯🇵 `data/overrides.csv` は最初の実行では作られず、判断を最初に記録した時点で作られる。書き方と例は [docs/overrides.md](docs/overrides.md)、対象会社の登録内容（`src/companies.py`）の直し方・足し方は [docs/companies.md](docs/companies.md) を参照。
+
+🇬🇧 `data/overrides.csv` is not created on the first run; it appears when the first decision is recorded. See [docs/overrides.md](docs/overrides.md) for the format with an example, and [docs/companies.md](docs/companies.md) for how to edit or add the registered companies in `src/companies.py`.
