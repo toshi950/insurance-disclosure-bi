@@ -39,7 +39,7 @@
 
 > 📝 少額短期保険業界にはEDINETパターンが存在しない：少額短期保険業者の大半は非上場の小規模事業者で、金融商品取引法上のEDINET提出義務を単体で負っていない（上場グループの子会社であっても、EDINETに出るのは親会社の連結決算であり、少短子会社単体の指標は切り出せない）。これは本プロジェクトが可視化しようとしている開示水準の断層そのものを裏付ける発見として記録する。
 
-> 📝 ソルベンシー規制の断層：2026年3月期より、生保・損保は区別なく経済価値ベースのソルベンシー規制（ESR）に移行した一方、少額短期保険業者は対象法人格に含まれず旧来のソルベンシー・マージン比率（SMR、200%基準）のまま据え置かれている（金融庁公式資料で確認、実データでも裏付け済み——少短のソルベンシー・マージン比率は1,000%を超える水準で開示されており、算出方式・スケールともに生損保とは別物）。「ソルベンシー比率」という一見共通に見える指標ですら、算出方式のタグ付けなしに8社横断で単純比較できないという事実自体が、本プロジェクトの課題設定を裏付けている。
+> 📝 ソルベンシー規制の断層：2026年3月期より、生保・損保は区別なく経済価値ベースのソルベンシー規制（ESR）に移行した一方、少額短期保険業者は対象法人格に含まれず旧来のソルベンシー・マージン比率（SMR、200%基準）のまま据え置かれている（金融庁公式資料で確認、実データでも裏付け済み——少短のソルベンシー・マージン比率は1,000%を超える水準で開示されており、算出方式・スケールともに生損保とは別物）。「ソルベンシー比率」という一見共通に見える指標ですら、算出方式のタグ付けなしに8社横断で単純比較できないという事実自体が、本プロジェクトの課題設定を裏付けている。なお、このプロジェクトで取得しているソルベンシー比率は個社ではなく連結ベースの値であり（EDINET XBRLに個別の比率がないため）、個社（単体）ベースを原則とする他の指標とは基準が異なる。損保3社は同経過措置により2026年3月期の比率がまだ開示されておらず、「開示前」として表示している。
 
 ## 現在の状況 (Status)
 - [x] データソースの実地検証（EDINET個社データ・各社PDFの取得可否確認、2026-09-23完了）
@@ -82,6 +82,12 @@
 🇯🇵 ダッシュボードは `streamlit run src/dashboard.py`（先に `python src/pipeline.py` を実行）。業態・会社で絞り込み、指標ごとの棒グラフ、会社×指標の比較表、各値の出所（資料・ページ）と確認状況を見られる。ソルベンシー比率は算出方式（ESR／SMR）ごとに分けて表示し、値が無い項目は「対象外／開示前／未取得」と理由を区別する。
 
 🇬🇧 Run the dashboard with `streamlit run src/dashboard.py` after `python src/pipeline.py`. It offers industry/company filters, a bar chart per metric, a company-by-metric table and the source (document, page) and review status of every value. Solvency ratios are split by regulatory scale (ESR vs SMR), and missing values are labelled not applicable / not yet disclosed / not found.
+
+![Dashboard demo (synthetic data)](docs/demo.gif)
+
+🇯🇵 上のGIFは**架空の会社・架空の数値**で作ったデモです（実在の会社のデータではありません）。ソルベンシー比率のESR／SMR分離表示、比較表、出所と確認状況の3画面を示しています。
+
+🇬🇧 The GIF above is a demo built on **made-up companies and made-up figures**, not real company data. It shows the ESR/SMR split of solvency ratios, the comparison table, and the source and review status view.
 
 🇯🇵 `data/overrides.csv` は最初の実行では作られず、判断を最初に記録した時点で作られる。書き方と例は [docs/overrides.md](docs/overrides.md)、対象会社の登録内容（`src/companies.py`）の直し方・足し方は [docs/companies.md](docs/companies.md) を参照。
 
