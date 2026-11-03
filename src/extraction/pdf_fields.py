@@ -196,6 +196,18 @@ GROUPS: tuple[Group, ...] = (
         prompt_note="連結ベースの表（「連結ソルベンシー・マージン比率」「連結ベース」）の最新期末の値。basis には必ず「連結」と書く。保険子会社・少額短期保険業者子会社の単体比率は対象外。",
     ),
     Group(
+        # 損保の2026年3月期ESRは「連結ベースのソルベンシー・マージン比率」の見出しで開示される
+        # （生保の「連結ソルベンシー・マージン比率」とは語順が違い、上のgroupでは拾えない）。損保のみ。
+        "solvency_consol_esr",
+        (Industry.NON_LIFE,),
+        must_all=("連結ベース", "ソルベンシー・マージン比率"),
+        rank_by=("要約", "適格資本", "所要資本", "経済価値", "(Ａ)", "(Ｂ)", "基準"),
+        fields=(
+            FieldDef("solvency_ratio_consol", "percent", "**連結**ソルベンシー・マージン比率（％）。連結ベースの要約表（適格資本の額÷所要資本の額）の最新期末の比率だけを返す（単体の比率や、子会社等である保険会社の比率は返さない。連結の比率が無ければ null）。経済価値ベース（ESR）が開示されていればそれ（note に ESR と明記）、従来基準のみなら SMR と明記"),
+        ),
+        prompt_note="連結ベースの表（「連結ベース」の要約表）の最新期末の値。basis には必ず「連結」と書く。「子会社等である保険会社の…」の表にある個別会社の比率、および単体ベースの比率は対象外。単体の算出結果を連結の算出結果として用いると明記されている場合のみ、その値を連結として返してよい。",
+    ),
+    Group(
         "life_profit",
         LIFE,
         must_all=("基礎利益",),
@@ -970,6 +982,7 @@ def run_company(company_id: str, record: Optional[CompanyRecord] = None) -> tupl
 # group -> the schema fields it can fill (helper fields fold into these)
 _GROUP_TARGETS = {
     "solvency_consol": ("solvency_ratio",),
+    "solvency_consol_esr": ("solvency_ratio",),
     "loans": ("assets_bankrupt_claims", "assets_doubtful_claims", "assets_substandard_claims", "assets_normal_claims"),
     "life_contracts": ("policies_in_force", "new_policies"),
 }

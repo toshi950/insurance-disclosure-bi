@@ -64,10 +64,6 @@ COMPANIES: list[CompanySpec] = [
     ),
     CompanySpec(
         company_id="tokio_marine_nichido",
-        not_yet_disclosed=(
-            ("solvency_ratio", "2026年3月期のソルベンシー比率は、令和7年内閣府令第71号の附則による経過措置で"
-                               "事業年度経過後7月以内（2026-10-31まで）に開示予定。2026-11-02に取得する予定"),
-        ),
         company_name="東京海上日動火災保険株式会社",
         industry=Industry.NON_LIFE,
         source_type=SourceType.EDINET,
@@ -75,6 +71,7 @@ COMPANIES: list[CompanySpec] = [
         document_id="S100YLTM",
         supplement_docs=(
             ("tokio_perf", "https://www.tokiomarine-nichido.co.jp/company/pdf/TMNF_2026_d_05.pdf"),
+            ("tokio_solvency", "https://www.tokiomarine-nichido.co.jp/company/pdf/TMNF_2026_d_07.pdf"),
         ),
         notes="第83期、2026-06-26提出。非上場の完全子会社だが公募社債等の継続開示義務により単独提出。"
         "PDF直リンク検証済み",
@@ -102,33 +99,34 @@ COMPANIES: list[CompanySpec] = [
     ),
     CompanySpec(
         company_id="ms_sompo",
-        not_yet_disclosed=(
-            ("solvency_ratio", "2026年3月期のソルベンシー比率は、令和7年内閣府令第71号の附則による経過措置で"
-                               "事業年度経過後7月以内（2026-10-31まで）に開示予定。2026-11-02に取得する予定"),
-        ),
         company_name="三井住友海上火災保険株式会社",
         industry=Industry.NON_LIFE,
         source_type=SourceType.PDF,
         pdf_url="https://www.ms-ins.com/company/aboutus/disclosure/data/f01.pdf",
         site_root="https://www.ms-ins.com",
+        # 2026年3月期のESRは別冊（2026-10-29公開）で開示。経過措置（令和7年内閣府令第71号 附則）による
+        supplement_docs=(
+            ("ms_solvency", "https://www.ms-ins.com/company/aboutus/disclosure/data/disclosure2026-bessatsu.pdf"),
+        ),
         notes="「業績データ」セクション(f01.pdf)。実地検証済み（種目別×準備金種類の2軸クロス表を含む"
         "詳細開示、異常危険準備金も種目別内訳まで取得可能）。他セクションはa01〜g01に分割されている",
     ),
     CompanySpec(
         company_id="sompo_japan",
-        not_yet_disclosed=(
-            ("solvency_ratio", "2026年3月期のソルベンシー比率は、令和7年内閣府令第71号の附則による経過措置で"
-                               "事業年度経過後7月以内（2026-10-31まで）に開示予定。2026-11-02に取得する予定"),
-        ),
         company_name="損害保険ジャパン株式会社",
         industry=Industry.NON_LIFE,
         source_type=SourceType.PDF,
         pdf_url="https://www.sompo-japan.co.jp/-/media/SJNK/files/company/disclosure/2026/sj_disc2026.pdf",
         site_root="https://www.sompo-japan.co.jp",
+        # 2026年3月期のESRは追補版で開示（連結を先に読む。連結が取れれば連結を採用する方針）
+        supplement_docs=(
+            ("sj_solvency_consol", "https://www.sompo-japan.co.jp/-/media/SJNK/files/company/disclosure/2026/solvency_sj_2025_consol.pdf"),
+            ("sj_solvency", "https://www.sompo-japan.co.jp/-/media/SJNK/files/company/disclosure/2026/solvency_sj_2025.pdf"),
+        ),
         notes="「損保ジャパンの現状2026」。⚠️一部テキストがフォントエンコーディング崩れ。"
         "業績データ章（0始まりp115〜）は文字がglyph-ID化しテキスト抽出不可（2026-10-03確認）。"
         "該当ページを画像で二重読取（pdf_fields.py参照）。1ファイルに統合、292ページ。"
-        "貸借対照表=p130、損益計算書=p135、保険業法に基づく債権=p147。単体ソルベンシー比率は2026年10月末開示予定（p37）で未開示",
+        "貸借対照表=p130、損益計算書=p135、保険業法に基づく債権=p147。ソルベンシー比率は本冊子に未掲載で、追補版（supplement_docs）で取得",
         image_page_hints=(("reserves", (130,)), ("pl", (135,)), ("loans", (147,))),
     ),
     CompanySpec(

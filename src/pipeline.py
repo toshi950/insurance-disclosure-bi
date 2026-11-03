@@ -107,6 +107,11 @@ def build_all() -> list[dict]:
             reasons = {n: (supp[n].reason if n in supp else "EDINET XBRLに無く、自社資料の補完対象外") for n in gaps}
         else:
             record, pdf_results = pdf_fields.run_company(spec.company_id)
+            if spec.supplement_docs:
+                # Figures published outside the main booklet (e.g. the 2026年3月期 ESR addenda).
+                for n, r in pdf_fields.run_supplement(spec.company_id, record).items():
+                    if r.ok and n in pdf_results:
+                        pdf_results[n] = r
             gaps = [n for n, r in pdf_results.items() if not r.ok]
             reasons = {n: pdf_results[n].reason for n in gaps}
         apply_not_applicable(record, spec)
